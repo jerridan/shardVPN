@@ -1,0 +1,4 @@
+.idea
+
+# Terraform state files
+terraform.tfstate*
