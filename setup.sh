@@ -1,5 +1,6 @@
 #!/bin/bash
 
+(
 set -e
 
 configure_ca_variable ()  {
@@ -48,7 +49,7 @@ configure_ca_variable "KEY_COUNTRY" "CA"
 configure_ca_variable "KEY_PROVINCE" "ON"
 configure_ca_variable "KEY_CITY" "Toronto"
 configure_ca_variable "KEY_ORG" "my_organization"
-configure_ca_variable "KEY_EMAIL" "jerridan@email.com"
+configure_ca_variable "KEY_EMAIL" "user@email.com"
 configure_ca_variable "KEY_OU" "my_organizational_unit"
 configure_ca_variable "KEY_NAME" "vpn_server"
 
@@ -147,3 +148,4 @@ sudo ./make_config.sh client
 
 # Move client ovpn file to home directory to allow file transfer access
 sudo cp ~/client-configs/files/client.ovpn ~/client.ovpn
+)
