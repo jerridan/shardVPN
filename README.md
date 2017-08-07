@@ -3,6 +3,21 @@ This tool allows for the temporary creation of a VPN server. You can create it,
 use it for however long you need, and then promptly destroy it.
 
 ### Dependencies
+#### AWS Login and Credentials
+BlinkVPN uses AWS to set up an EC2 micro instance as the VPN server. Therefore,
+must have:
+1. Signed up for an AWS account
+1. Created IAM credentials and saved them to your local machine.
+
+To set up IAM credentials, create an IAM user in your AWS console and grant
+that user full access to EC2 instances. You will be given a set of credentials
+to be entered into a file `~/.aws/credentials` as follows:
+```
+[default]
+aws_access_key_id = YOUR_AWS_ACCESS_KEY_ID
+aws_secret_access_key = YOUR_AWS_SECRET_ACCESS_KEY
+```
+
 #### OpenVPN Terminal Client
 You must use a client-side application to connect to the VPN server using an
 OpenVPN (*ovpn) configuration file. Several options exist (ex. Tunnelblick),
