@@ -6,6 +6,7 @@ resource "aws_instance" "vpn" {
   ami = "${lookup(var.amis, var.region)}"
   instance_type = "t2.micro"
   key_name = "deployer"
+  depends_on = ["aws_security_group.vpn_security_group"]
   security_groups = ["vpn_security_group"]
   connection = {
     type = "ssh"
