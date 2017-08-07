@@ -44,3 +44,16 @@ When you are finished with a VPN server, destroy it by running:
 * Server location: Montreal, Canada
 * Server outbound rules: All TCP and UDP connections, ICMP protocols 0 and 8
 * Server inbound rules: TCP ports 22 and 1194
+
+### Troubleshooting
+If you are receiving the following error message while trying to connect
+to the VPN server:
+
+`Can't assign requested address`
+
+You need to flush your routing table. The simple way is to restart your
+local machine. Another way is to run the following commands:
+
+1. `sudo ifconfig en1 down` (or `en0` if on an ethernet connection)
+1. `sudo route flush`
+1. `sudo ifconfig en1 up`
