@@ -37,6 +37,13 @@ insert_line_after () {
   sudo sed -i "/$match/a $line_to_insert" $file
 }
 
+replace_line () {
+  old_line=$1
+  new_line=$2
+  file=$3
+  sudo sed -i "s/$old_line/$new_line/" $file
+}
+
 # Set up OpenVPN
 sudo apt-get -y -qq update
 sudo apt-get -y -qq install openvpn easy-rsa
@@ -84,6 +91,9 @@ uncomment_lines_with_prefix "group nogroup" "/etc/openvpn/server.conf" ";"
 uncomment_lines_with_prefix "push \"redirect-gateway" "/etc/openvpn/server.conf" ";"
 uncomment_lines_with_prefix "push \"dhcp-option" "/etc/openvpn/server.conf" ";"
 
+# Use port 443 instead of 1194
+replace_line "port 1194" "port 443" "/etc/openvpn/server.conf"
+
 # Use the TCP protocol
 comment_lines_with_prefix "proto udp" "/etc/openvpn/server.conf" ";"
 uncomment_lines_with_prefix "proto tcp" "/etc/openvpn/server.conf" ";"
@@ -103,10 +113,10 @@ sudo sed -i "/Don't delete these required lines.*/i\
 COMMIT\n\
 # END OPENVPN RULES\n" /etc/ufw/before.rules
 
-sudo sed -i "s/DEFAULT_FORWARD_POLICY=\"DROP\"/DEFAULT_FORWARD_POLICY=\"ACCEPT\"/" /etc/default/ufw
+replace_line "DEFAULT_FORWARD_POLICY=\"DROP\"" "DEFAULT_FORWARD_POLICY=\"ACCEPT\"" "/etc/default/ufw"
 
 # Open the OpenVPN port and enable changes
-sudo ufw allow 1194/tcp
+sudo ufw allow 443/tcp
 sudo ufw allow OpenSSH
 sudo ufw disable
 sudo ufw --force enable
@@ -122,7 +132,7 @@ sudo chmod 700 ~/client-configs/files
 # Create base configuration
 sudo cp /usr/share/doc/openvpn/examples/sample-config-files/client.conf ~/client-configs/base.conf
 public_ip="$(curl ipinfo.io/ip)"
-sudo sed -i "s/remote my-server-1 1194/remote $public_ip 1194/" ~/client-configs/base.conf
+replace_line "remote my-server-1 1194" "remote $public_ip 443" ~/client-configs/base.conf
 comment_lines_with_prefix "proto udp" ~/client-configs/base.conf  ";"
 uncomment_lines_with_prefix "proto tcp" ~/client-configs/base.conf ";"
 uncomment_lines_with_prefix "user nobody" ~/client-configs/base.conf ";"

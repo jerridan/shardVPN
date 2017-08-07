@@ -50,8 +50,8 @@ resource "aws_security_group" "vpn_security_group" {
   }
 
   ingress {
-    from_port   = 1194
-    to_port     = 1194
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
