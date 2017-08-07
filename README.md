@@ -55,10 +55,10 @@ When you are finished with a VPN server, destroy it by running:
  
 ### Specifications
 * Protocol: TCP
-* Port: 1194
+* Port: 443
 * Server location: Montreal, Canada
 * Server outbound rules: All TCP and UDP connections, ICMP protocols 0 and 8
-* Server inbound rules: TCP ports 22 and 1194
+* Server inbound rules: TCP ports 22 and 443
 
 ### Troubleshooting
 If you are receiving the following error message while trying to connect
