@@ -80,7 +80,7 @@ usage() {
 }
 
 generate_full_server_url() {
-  if [ -z "${OVPN_CN:-}" ]; then
+  if [ -n "${OVPN_CN:-}" ]; then
     OVPN_SERVER_URL="${OVPN_PROTO}://${OVPN_CN}:${OVPN_PORT}"
   else
     set +x
