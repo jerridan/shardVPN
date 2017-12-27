@@ -110,26 +110,26 @@ save_ovpn_vars() {
 
 save_ovpn_config() {
 cat > "$configuration_file" <<EOF
-  server $(getroute $OVPN_SERVER)
-  verb 3
-  key $EASYRSA_PKI/private/${OVPN_CN}.key
-  ca $EASYRSA_PKI/ca.crt
-  cert $EASYRSA_PKI/issued/${OVPN_CN}.crt
-  dh $EASYRSA_PKI/dh.pem
-  tls-auth $EASYRSA_PKI/ta.key
-  key-direction 0
-  keepalive $OVPN_KEEPALIVE
-  persist-key
-  persist-tun
+server $(getroute $OVPN_SERVER)
+verb 3
+key $EASYRSA_PKI/private/${OVPN_CN}.key
+ca $EASYRSA_PKI/ca.crt
+cert $EASYRSA_PKI/issued/${OVPN_CN}.crt
+dh $EASYRSA_PKI/dh.pem
+tls-auth $EASYRSA_PKI/ta.key
+key-direction 0
+keepalive $OVPN_KEEPALIVE
+persist-key
+persist-tun
 
-  proto $OVPN_PROTO
-  # Rely on Docker to do port mapping, internally always 1194
-  port 1194
-  dev $OVPN_DEVICE$OVPN_DEVICEN
-  status /tmp/openvpn-status.log
+proto $OVPN_PROTO
+# Rely on Docker to do port mapping, internally always 1194
+port 1194
+dev $OVPN_DEVICE$OVPN_DEVICEN
+status /tmp/openvpn-status.log
 
-  user nobody
-  group nogroup
+user nobody
+group nogroup
 EOF
 }
 
