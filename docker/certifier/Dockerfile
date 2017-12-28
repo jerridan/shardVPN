@@ -1,19 +1,21 @@
 FROM alpine:latest
 
-RUN apk add --update openvpn iptables bash easy-rsa && \
+RUN apk add --update bash easy-rsa && \
     ln -s /usr/share/easy-rsa/easyrsa /usr/local/bin && \
     rm -rf /tmp/* /var/tmp/* /var/cache/apk/* /var/cache/distfiles/*
 
 ENV OPENVPN /etc/openvpn
 ENV EASYRSA /usr/share/easy-rsa
 ENV EASYRSA_PKI $OPENVPN/pki
+ENV BLINK /etc/blinkvpn
 
-VOLUME ["/etc/openvpn"]
+RUN ["mkdir", "/etc/blinkvpn"]
 
-# Internally uses port 1194/udp, remap using `docker run -p 443:1194/tcp`
-EXPOSE 1194/udp
+VOLUME ["/etc/blinkvpn"]
 
-ADD ./scripts /usr/local/bin
+ADD ./scripts/create_certifier.sh /usr/local/bin
 RUN chmod a+x /usr/local/bin/*
 
-CMD ["ovpn_genconfig.sh"]
+WORKDIR $EASYRSA
+
+CMD ["create_certifier.sh"]
