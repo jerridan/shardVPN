@@ -1,3 +1,5 @@
+# Based on the great work completed by Kyle Manna: https://github.com/kylemanna/docker-openvpn
+
 FROM alpine:latest
 
 RUN apk add --update bash easy-rsa && \
