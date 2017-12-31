@@ -11,9 +11,11 @@ ENV EASYRSA /usr/share/easy-rsa
 ENV EASYRSA_PKI $OPENVPN/pki
 ENV BLINK /etc/blinkvpn
 
+RUN ["mkdir", "-p", "/etc/openvpn/server"]
+
 VOLUME ["/etc/blinkvpn"]
 
-ADD ./scripts/* /usr/local/bin
+ADD ./scripts /usr/local/bin
 RUN chmod a+x /usr/local/bin/*
 
 WORKDIR $EASYRSA
