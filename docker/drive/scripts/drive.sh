@@ -18,7 +18,13 @@ generate_hmac_key() {
   echo "HMAC key generated successfully."
 }
 
+generate_openvpn_server_config() {
+  server_domain="$1"
+  ovpn_genconfig.sh -d server_domain
+}
+
 easyrsa init-pki
 generate_server_key
 generate_diffie_hellman_params
 generate_hmac_key
+generate_openvpn_server_config blink-drive.vpn.example
