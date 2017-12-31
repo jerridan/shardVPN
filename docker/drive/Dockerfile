@@ -12,6 +12,7 @@ ENV EASYRSA_PKI $OPENVPN/pki
 ENV BLINK /etc/blinkvpn
 
 RUN ["mkdir", "-p", "/etc/openvpn/server"]
+RUN ["mkdir", "-p", "/etc/openvpn/client"]
 
 VOLUME ["/etc/blinkvpn"]
 
