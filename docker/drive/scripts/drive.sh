@@ -13,6 +13,12 @@ generate_diffie_hellman_params() {
   echo "Diffie Hellman parameters generated successfully."
 }
 
+generate_hmac_key() {
+  openvpn --genkey --secret $OPENVPN/server/ta.key
+  echo "HMAC key generated successfully."
+}
+
 easyrsa init-pki
 generate_server_key
 generate_diffie_hellman_params
+generate_hmac_key
