@@ -8,7 +8,11 @@ generate_server_key() {
   echo "Server certificate and key pair created successfully."
 }
 
+generate_diffie_hellman_params() {
+  openssl dhparam -out $OPENVPN/server/dh.pem 2048
+  echo "Diffie Hellman parameters generated successfully."
+}
+
 easyrsa init-pki
 generate_server_key
-cat $OPENVPN/server/blink-drive.key
-cat $EASYRSA_PKI/reqs/blink-drive.req
+generate_diffie_hellman_params
