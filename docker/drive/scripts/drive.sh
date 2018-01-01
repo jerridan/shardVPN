@@ -26,7 +26,7 @@ generate_hmac_key() {
 
 generate_openvpn_server_config() {
   server_domain="$1"
-  ovpn_genconfig.sh -d server_domain
+  ovpn_generate_server_config.sh -d server_domain
 }
 
 easyrsa init-pki
