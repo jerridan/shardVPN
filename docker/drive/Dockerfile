@@ -7,6 +7,7 @@ RUN apk add --update bash easy-rsa openvpn && \
     rm -rf /tmp/* /var/tmp/* /var/cache/apk/* /var/cache/distfiles/*
 
 ENV OPENVPN /etc/openvpn
+ENV OVPN_ENV $OPENVPN/ovpn_env.sh
 ENV EASYRSA /usr/share/easy-rsa
 ENV EASYRSA_PKI $OPENVPN/pki
 ENV BLINK /etc/blinkvpn

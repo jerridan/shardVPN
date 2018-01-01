@@ -169,7 +169,6 @@ OVPN_DEVICEN=0
 OVPN_DISABLE_PUSH_BLOCK_DNS=0
 OVPN_DNS=1
 OVPN_DNS_SERVERS=([0]="8.8.8.8" [1]="8.8.4.4")
-OVPN_ENV=${OPENVPN}/ovpn_env.sh
 OVPN_EXTRA_CLIENT_CONFIG=()
 OVPN_EXTRA_SERVER_CONFIG=()
 OVPN_FRAGMENT=''
@@ -221,4 +220,4 @@ save_ovpn_config
 process_push_config "block-outside-dns"
 append_push_commands
 
-echo "Successfully generated config"
+echo "Successfully generated openvpn server config"
