@@ -3,3 +3,4 @@
 # Terraform state files
 terraform.tfstate*
 /docker/certifier/test_data/
+/docker/drive/test_data/

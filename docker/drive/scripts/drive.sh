@@ -4,13 +4,13 @@ set -e
 
 generate_server_key() {
   easyrsa --batch --req-cn=blink-drive gen-req blink-drive nopass
-  cp $EASYRSA_PKI/private/blink-drive.key $OPENVPN/server/blink-drive.key
+  cp $EASYRSA_PKI/private/$SERVERNAME.key $OPENVPN/server/$SERVERNAME.key
   echo "Server certificate and key pair created successfully."
 }
 
 generate_client_key() {
   easyrsa --batch --req-cn=blink-client gen-req blink-client nopass
-  cp $EASYRSA_PKI/private/blink-client.key $OPENVPN/client/blink-client.key
+  cp $EASYRSA_PKI/private/$CLIENTNAME.key $OPENVPN/client/$CLIENTNAME.key
   echo "Client certificate and key pair created successfully."
 }
 

@@ -11,11 +11,16 @@ ENV OVPN_ENV $OPENVPN/ovpn_env.sh
 ENV EASYRSA /usr/share/easy-rsa
 ENV EASYRSA_PKI $OPENVPN/pki
 ENV BLINK /etc/blinkvpn
+ENV CLIENTNAME "blink-client"
+ENV SERVERNAME "blink-drive"
 
 RUN ["mkdir", "-p", "/etc/openvpn/server"]
 RUN ["mkdir", "-p", "/etc/openvpn/client"]
 
 VOLUME ["/etc/blinkvpn"]
+
+# To be removed when the certifier is linked in with the drive
+ADD ./test_data/ca.crt /etc/blinkvpn
 
 ADD ./scripts /usr/local/bin
 RUN chmod a+x /usr/local/bin/*
