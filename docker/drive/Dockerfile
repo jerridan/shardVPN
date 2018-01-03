@@ -8,8 +8,6 @@ RUN apk add --update bash easy-rsa openvpn && \
 
 ENV OPENVPN /etc/openvpn
 ENV OVPN_ENV $OPENVPN/ovpn_env.sh
-ENV EASYRSA /usr/share/easy-rsa
-ENV EASYRSA_PKI $OPENVPN/pki
 ENV BLINK_VOLUME /etc/blinkvpn
 ENV CLIENTNAME "blink-client"
 ENV SERVERNAME "blink-drive"
@@ -22,6 +20,6 @@ VOLUME ["/etc/blinkvpn"]
 ADD ./scripts /usr/local/bin
 RUN chmod a+x /usr/local/bin/*
 
-WORKDIR $EASYRSA
+WORKDIR $OPENVPN
 
 CMD ["drive.sh"]

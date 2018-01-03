@@ -11,6 +11,5 @@ generate_openvpn_client_config() {
   ovpn_generate_client_config.sh
 }
 
-easyrsa init-pki
 generate_openvpn_server_config blink-drive.vpn.example
 generate_openvpn_client_config
