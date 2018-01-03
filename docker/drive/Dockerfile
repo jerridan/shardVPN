@@ -10,7 +10,7 @@ ENV OPENVPN /etc/openvpn
 ENV OVPN_ENV $OPENVPN/ovpn_env.sh
 ENV EASYRSA /usr/share/easy-rsa
 ENV EASYRSA_PKI $OPENVPN/pki
-ENV BLINK /etc/blinkvpn
+ENV BLINKVPN /etc/blinkvpn
 ENV CLIENTNAME "blink-client"
 ENV SERVERNAME "blink-drive"
 

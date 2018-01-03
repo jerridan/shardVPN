@@ -9,7 +9,7 @@ RUN apk add --update bash easy-rsa openvpn && \
 ENV OPENVPN /etc/openvpn
 ENV EASYRSA /usr/share/easy-rsa
 ENV EASYRSA_PKI $OPENVPN/pki
-ENV BLINK /etc/blinkvpn
+ENV BLINK_VOLUME /etc/blinkvpn
 ENV CLIENTNAME "blink-client"
 ENV SERVERNAME "blink-drive"
 
