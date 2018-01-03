@@ -9,33 +9,31 @@ if [[ ${DEBUG:-} == "1" ]]; then
   set -x
 fi
 
-if ! source ${OVPN_ENV}; then
+if ! source "${OVPN_ENV}"; then
   echo "File ${OVPN_ENV} does not exist."
 fi
 
-if [[ ! -f "${OPENVPN}/client/${CLIENTNAME}.key" ]]; then
-  echo "Client key at ${OPENVPN}/client/${CLIENTNAME}.key not found"
+if [[ ! -f "${BLINK_VOLUME}/${CLIENTNAME}.key" ]]; then
+  echo "Client key at ${BLINK_VOLUME}/${CLIENTNAME}.key not found"
   exit 1
 fi
 
-# Will come from the certifier
-if [[ ! -f "${OPENVPN}/test_data/${CLIENTNAME}.crt" ]]; then
-  echo "Client certificate at ${OPENVPN}/test_data/${CLIENTNAME}.crt not found"
+if [[ ! -f "${BLINK_VOLUME}/${CLIENTNAME}.crt" ]]; then
+  echo "Client certificate at ${BLINK_VOLUME}/${CLIENTNAME}.crt not found"
   exit 1
 fi
 
-# Will come from the certifier
-if [[ ! -f "${OPENVPN}/test_data/ca.crt" ]]; then
-  echo "Certificate authority at ${OPENVPN}/test_data/ca.crt not found"
+if [[ ! -f "${BLINK_VOLUME}/ca.crt" ]]; then
+  echo "Certificate authority at ${BLINK_VOLUME}/ca.crt not found"
   exit 1
 fi
 
-if [[ ! -f "${OPENVPN}/server/ta.key" ]]; then
-  echo "HMAC key at ${OPENVPN}/server/ta.key not found"
+if [[ ! -f "${BLINK_VOLUME}/ta.key" ]]; then
+  echo "HMAC key at ${BLINK_VOLUME}/ta.key not found"
   exit 1
 fi
 
-configuration_file="${CLIENTNAME}.ovpn"
+configuration_file="${BLINK_VOLUME}/${CLIENTNAME}.ovpn"
 
 add_basic_ovpn_protocols() {
 cat >> ${configuration_file} <<EOF
@@ -51,16 +49,16 @@ EOF
 add_certificates_and_keys() {
 cat >> ${configuration_file} <<EOF
 <key>
-$(cat ${OPENVPN}/client/${CLIENTNAME}.key)
+$(cat ${BLINK_VOLUME}/${CLIENTNAME}.key)
 </key>
 <cert>
-$(openssl x509 -in ${OPENVPN}/test_data/${CLIENTNAME}.crt)
+$(openssl x509 -in ${BLINK_VOLUME}/${CLIENTNAME}.crt)
 </cert>
 <ca>
-$(cat ${OPENVPN}/test_data/ca.crt)
+$(cat ${BLINK_VOLUME}/ca.crt)
 </ca>
 <tls-auth>
-$(cat ${OPENVPN}/server/ta.key)
+$(cat ${BLINK_VOLUME}/ta.key)
 </tls-auth>
 EOF
 }

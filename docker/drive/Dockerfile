@@ -19,9 +19,6 @@ RUN ["mkdir", "-p", "/etc/openvpn/client"]
 
 VOLUME ["/etc/blinkvpn"]
 
-# To be removed when the certifier is linked in with the drive
-ADD ./test_data /etc/openvpn/test_data
-
 ADD ./scripts /usr/local/bin
 RUN chmod a+x /usr/local/bin/*
 
