@@ -15,9 +15,9 @@ RUN ["mkdir", "/etc/blinkvpn"]
 
 VOLUME ["/etc/blinkvpn"]
 
-ADD ./scripts/create_certifier.sh /usr/local/bin
+ADD ./scripts /usr/local/bin
 RUN chmod a+x /usr/local/bin/*
 
 WORKDIR $EASYRSA
 
-CMD ["create_certifier.sh"]
+CMD ["certifier.sh"]
