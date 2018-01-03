@@ -4,41 +4,6 @@
 
 set -e
 
-# Enable debug mode if ENV variable DEBUG == 1
-if [[ ${DEBUG:-} == "1" ]]; then
-  set -x
-fi
-
-if ! source "${OVPN_ENV}"; then
-  echo "File ${OVPN_ENV} does not exist."
-fi
-
-if [[ ! -f "${BLINK_VOLUME}/${CLIENTNAME}.key" ]]; then
-  echo "Client key at ${BLINK_VOLUME}/${CLIENTNAME}.key not found"
-  exit 1
-fi
-
-if [[ ! -f "${BLINK_VOLUME}/${CLIENTNAME}.crt" ]]; then
-  echo "Client certificate at ${BLINK_VOLUME}/${CLIENTNAME}.crt not found"
-  exit 1
-fi
-
-if [[ ! -f "${BLINK_VOLUME}/ca.crt" ]]; then
-  echo "Certificate authority at ${BLINK_VOLUME}/ca.crt not found"
-  exit 1
-fi
-
-if [[ ! -f "${BLINK_VOLUME}/ta.key" ]]; then
-  echo "HMAC key at ${BLINK_VOLUME}/ta.key not found"
-  exit 1
-fi
-
-configuration_file="${BLINK_VOLUME}/${CLIENTNAME}.ovpn"
-
-if [[ -f "${configuration_file}" ]]; then
-  rm "${configuration_file}"
-fi
-
 add_basic_ovpn_protocols() {
 cat >> ${configuration_file} <<EOF
 client
@@ -107,6 +72,41 @@ add_extra_client_config() {
     echo "${config}" >> ${configuration_file}
   done
 }
+
+# Enable debug mode if ENV variable DEBUG == 1
+if [[ ${DEBUG:-} == "1" ]]; then
+  set -x
+fi
+
+if ! source "${OVPN_ENV}"; then
+  echo "File ${OVPN_ENV} does not exist."
+fi
+
+if [[ ! -f "${BLINK_VOLUME}/${CLIENTNAME}.key" ]]; then
+  echo "Client key at ${BLINK_VOLUME}/${CLIENTNAME}.key not found"
+  exit 1
+fi
+
+if [[ ! -f "${BLINK_VOLUME}/${CLIENTNAME}.crt" ]]; then
+  echo "Client certificate at ${BLINK_VOLUME}/${CLIENTNAME}.crt not found"
+  exit 1
+fi
+
+if [[ ! -f "${BLINK_VOLUME}/ca.crt" ]]; then
+  echo "Certificate authority at ${BLINK_VOLUME}/ca.crt not found"
+  exit 1
+fi
+
+if [[ ! -f "${BLINK_VOLUME}/ta.key" ]]; then
+  echo "HMAC key at ${BLINK_VOLUME}/ta.key not found"
+  exit 1
+fi
+
+configuration_file="${BLINK_VOLUME}/${CLIENTNAME}.ovpn"
+
+if [[ -f "${configuration_file}" ]]; then
+  rm "${configuration_file}"
+fi
 
 add_basic_ovpn_protocols
 add_config_options
