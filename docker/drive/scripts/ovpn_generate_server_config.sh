@@ -79,11 +79,11 @@ save_ovpn_config() {
 cat > "${configuration_file}" <<EOF
 server $(getroute "${OVPN_SERVER}")
 verb 3
-key "${EASYRSA_PKI}/private/${OVPN_CN}.key"
-ca "${EASYRSA_PKI}/ca.crt"
-cert "${EASYRSA_PKI}/issued/${OVPN_CN}.crt"
-dh "${EASYRSA_PKI}/dh.pem"
-tls-auth "${EASYRSA_PKI}/ta.key"
+key "${BLINK_VOLUME}/${OVPN_CN}.key"
+ca "${BLINK_VOLUME}/ca.crt"
+cert "${BLINK_VOLUME}/${OVPN_CN}.crt"
+dh "${BLINK_VOLUME}/dh.pem"
+tls-auth "${BLINK_VOLUME}/ta.key"
 key-direction 0
 keepalive "${OVPN_KEEPALIVE}"
 persist-key
@@ -123,6 +123,26 @@ append_push_commands() {
 # Enable debug mode if ENV variable DEBUG == 1
 if [[ ${DEBUG:-} == "1" ]]; then
   set -x
+fi
+
+if [[ ! -f "${BLINK_VOLUME}/${SERVERNAME}.key" ]]; then
+  echo "Server key at ${BLINK_VOLUME}/${SERVERNAME}.key not found"
+  exit 1
+fi
+
+if [[ ! -f "${BLINK_VOLUME}/${SERVERNAME}.crt" ]]; then
+  echo "Server certificate at ${BLINK_VOLUME}/${SERVERNAME}.crt not found"
+  exit 1
+fi
+
+if [[ ! -f "${BLINK_VOLUME}/ca.crt" ]]; then
+  echo "Certificate authority at ${BLINK_VOLUME}/ca.crt not found"
+  exit 1
+fi
+
+if [[ ! -f "${BLINK_VOLUME}/ta.key" ]]; then
+  echo "HMAC key at ${BLINK_VOLUME}/ta.key not found"
+  exit 1
 fi
 
 OVPN_AUTH=''
