@@ -35,6 +35,10 @@ fi
 
 configuration_file="${BLINK_VOLUME}/${CLIENTNAME}.ovpn"
 
+if [[ -f "${configuration_file}" ]]; then
+  rm "${configuration_file}"
+fi
+
 add_basic_ovpn_protocols() {
 cat >> ${configuration_file} <<EOF
 client
@@ -108,3 +112,5 @@ add_basic_ovpn_protocols
 add_config_options
 add_extra_client_config
 add_certificates_and_keys
+
+echo "Successfully generated openvpn client config"
