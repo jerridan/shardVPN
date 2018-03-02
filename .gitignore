@@ -2,5 +2,4 @@
 
 # Terraform state files
 terraform.tfstate*
-/certifier/test_data/
-/drive/test_data/
+.terraform
