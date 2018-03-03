@@ -16,33 +16,7 @@ resource "aws_instance" "blink_certifier" {
   }
 
   provisioner "remote-exec" {
-    inline = [
-      "sudo yum update -y",
-      "sudo yum install -y docker",
-      "sudo service docker start",
-      "sudo usermod -a -G docker ec2-user",
-      "sudo mkdir -p ~/blink/keys",
-      "sudo mkdir -p ~/blink/terraform",
-      "sudo mkdir -p ~/blink/downloads",
-      "sudo docker run -v ~/blink/keys:/etc/blinkvpn jerridan/blink-certifier",
-      "sudo chown -R ec2-user:ec2-user ~/blink",
-      "curl -o ~/blink/downloads/terraform_install.zip https://releases.hashicorp.com/terraform/0.11.3/terraform_0.11.3_linux_amd64.zip",
-      "unzip -d ~/blink/downloads ~/blink/downloads/terraform_install.zip",
-      "sudo mv ~/blink/downloads/terraform /usr/bin/terraform",
-    ]
-  }
-
-  provisioner "file" {
-    source = "./certifier/s3.tf",
-    destination = "~/blink/terraform/s3.tf"
-  }
-
-  provisioner "remote-exec" {
-    inline = [
-      "cd ~/blink/terraform",
-      "terraform init",
-      "terraform apply -auto-approve"
-    ]
+    script = "./certifier/provision_certifier.sh"
   }
 }
 
