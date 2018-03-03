@@ -16,7 +16,7 @@ resource "aws_instance" "blink_certifier" {
   }
 
   provisioner "remote-exec" {
-    script = "./certifier/provision_certifier.sh"
+    script = "./provision_certifier.sh"
   }
 }
 
