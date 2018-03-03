@@ -117,6 +117,25 @@ resource "aws_iam_role_policy" "blink_certifier_policy" {
       "Effect": "Allow",
       "Action": "s3:*",
       "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "kms:ListKeyPolicies",
+        "kms:GenerateRandom",
+        "kms:ListRetirableGrants",
+        "kms:GetKeyPolicy",
+        "kms:ListResourceTags",
+        "kms:ReEncryptFrom",
+        "kms:ListGrants",
+        "kms:GetParametersForImport",
+        "kms:ListKeys",
+        "kms:GetKeyRotationStatus",
+        "kms:ListAliases",
+        "kms:ReEncryptTo",
+        "kms:DescribeKey"
+      ],
+      "Resource": "*"
     }
   ]
 }
