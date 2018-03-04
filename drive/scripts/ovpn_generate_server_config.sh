@@ -79,9 +79,9 @@ save_ovpn_config() {
 cat > "${configuration_file}" <<EOF
 server $(getroute "${OVPN_SERVER}")
 verb 3
-key ${BLINK_VOLUME}/${OVPN_CN}.key
+key ${BLINK_VOLUME}/${SERVERNAME}.key
 ca ${BLINK_VOLUME}/ca.crt
-cert ${BLINK_VOLUME}/${OVPN_CN}.crt
+cert ${BLINK_VOLUME}/${SERVERNAME}.crt
 dh ${BLINK_VOLUME}/dh.pem
 tls-auth ${BLINK_VOLUME}/ta.key
 key-direction 0
