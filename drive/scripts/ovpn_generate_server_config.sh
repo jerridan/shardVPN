@@ -79,20 +79,20 @@ save_ovpn_config() {
 cat > "${configuration_file}" <<EOF
 server $(getroute "${OVPN_SERVER}")
 verb 3
-key "${BLINK_VOLUME}/${OVPN_CN}.key"
-ca "${BLINK_VOLUME}/ca.crt"
-cert "${BLINK_VOLUME}/${OVPN_CN}.crt"
-dh "${BLINK_VOLUME}/dh.pem"
-tls-auth "${BLINK_VOLUME}/ta.key"
+key ${BLINK_VOLUME}/${OVPN_CN}.key
+ca ${BLINK_VOLUME}/ca.crt
+cert ${BLINK_VOLUME}/${OVPN_CN}.crt
+dh ${BLINK_VOLUME}/dh.pem
+tls-auth ${BLINK_VOLUME}/ta.key
 key-direction 0
-keepalive "${OVPN_KEEPALIVE}"
+keepalive ${OVPN_KEEPALIVE}
 persist-key
 persist-tun
 
-proto "${OVPN_PROTO}"
+proto ${OVPN_PROTO}
 # Rely on Docker to do port mapping, internally always 1194
 port 1194
-dev "${OVPN_DEVICE}${OVPN_DEVICEN}"
+dev ${OVPN_DEVICE}${OVPN_DEVICEN}
 status /tmp/openvpn-status.log
 
 user nobody
@@ -148,7 +148,7 @@ fi
 OVPN_AUTH=''
 OVPN_CIPHER=''
 OVPN_CLIENT_TO_CLIENT=''
-OVPN_CN=''
+OVPN_CN=${SERVER_DOMAIN}
 OVPN_COMP_LZO=0
 OVPN_DEFROUTE=1
 OVPN_DEVICE="tun"
@@ -207,4 +207,5 @@ save_ovpn_config
 process_push_config "block-outside-dns"
 append_push_commands
 
-echo "Successfully generated openvpn server config"
+echo "Successfully generated openvpn server config for server at domain ${SERVER_DOMAIN}"
+cat ${configuration_file}
