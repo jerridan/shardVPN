@@ -20,8 +20,44 @@ resource "aws_ecs_service" "blink_drive_service" {
 
 resource "aws_ecs_task_definition" "blink_drive_task" {
   family = "blink-drive-task"
-  container_definitions = "${file("blink_drive_task_definition.json")}"
   network_mode = "host"
+  container_definitions = <<EOF
+[
+  {
+    "name": "blink-drive-1",
+    "image": "jerridan/blink-drive",
+    "memory": 512,
+    "cpu": 10,
+    "privileged": true,
+    "portMappings": [
+      {
+        "containerPort": 443,
+        "hostPort": 443,
+        "protocol": "tcp"
+      },
+      {
+        "containerPort": 1194,
+        "hostPort": 1194,
+        "protocol": "udp"
+      }
+    ],
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+        "awslogs-group": "blink-drive-log-group",
+        "awslogs-region": "ca-central-1",
+        "awslogs-stream-prefix": "blink-drive"
+      }
+    },
+    "environment": [
+      {
+        "name": "SERVER_DOMAIN",
+        "value": "${aws_instance.blink_drive_host.public_ip}"
+      }
+    ]
+  }
+]
+EOF
 }
 
 resource "aws_instance" "blink_drive_host" {
