@@ -2,7 +2,8 @@
 
 FROM alpine:latest
 
-RUN apk add --update bash easy-rsa openvpn && \
+RUN apk add --update bash easy-rsa openvpn python py-pip && \
+    pip install awscli && \
     ln -s /usr/share/easy-rsa/easyrsa /usr/local/bin && \
     rm -rf /tmp/* /var/tmp/* /var/cache/apk/* /var/cache/distfiles/*
 
@@ -14,8 +15,9 @@ ENV SERVERNAME "blink-drive"
 
 RUN ["mkdir", "-p", "/etc/openvpn/server"]
 RUN ["mkdir", "-p", "/etc/openvpn/client"]
+RUN ["mkdir", "/etc/blinkvpn"]
 
-VOLUME ["/etc/blinkvpn"]
+#VOLUME ["/etc/blinkvpn"]
 
 ADD scripts /usr/local/bin
 RUN chmod a+x /usr/local/bin/*
