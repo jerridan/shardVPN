@@ -73,6 +73,10 @@ add_extra_client_config() {
   done
 }
 
+copy_client_config_to_s3() {
+  aws s3 cp "${configuration_file}" s3://blink-keys/client.ovpn
+}
+
 # Enable debug mode if ENV variable DEBUG == 1
 if [[ ${DEBUG:-} == "1" ]]; then
   set -x
@@ -114,3 +118,7 @@ add_extra_client_config
 add_certificates_and_keys
 
 echo "Successfully generated openvpn client config"
+
+copy_client_config_to_s3
+
+echo "Client config uploaded to s3"
