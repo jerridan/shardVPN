@@ -5,10 +5,12 @@
 set -e
 
 TMP_PUSH_CONFIGFILE=$(mktemp -t vpn_push.XXXXXXX)
+TMP_ROUTE_CONFIGFILE=$(mktemp -t vpn_route.XXXXXXX)
 
 on_exit() {
   echo "Removing temporary files..."
   rm -f "${TMP_PUSH_CONFIGFILE}"
+  rm -f "${TMP_ROUTE_CONFIGFILE}"
 }
 trap on_exit EXIT
 
@@ -79,20 +81,20 @@ save_ovpn_config() {
 cat > "${configuration_file}" <<EOF
 server $(getroute "${OVPN_SERVER}")
 verb 3
-key "${BLINK_VOLUME}/${OVPN_CN}.key"
-ca "${BLINK_VOLUME}/ca.crt"
-cert "${BLINK_VOLUME}/${OVPN_CN}.crt"
-dh "${BLINK_VOLUME}/dh.pem"
-tls-auth "${BLINK_VOLUME}/ta.key"
+key ${BLINK_VOLUME}/${SERVERNAME}.key
+ca ${BLINK_VOLUME}/ca.crt
+cert ${BLINK_VOLUME}/${SERVERNAME}.crt
+dh ${BLINK_VOLUME}/dh.pem
+tls-auth ${BLINK_VOLUME}/ta.key
 key-direction 0
-keepalive "${OVPN_KEEPALIVE}"
+keepalive ${OVPN_KEEPALIVE}
 persist-key
 persist-tun
 
-proto "${OVPN_PROTO}"
+proto ${OVPN_PROTO}
 # Rely on Docker to do port mapping, internally always 1194
 port 1194
-dev "${OVPN_DEVICE}${OVPN_DEVICEN}"
+dev ${OVPN_DEVICE}${OVPN_DEVICEN}
 status /tmp/openvpn-status.log
 
 user nobody
@@ -105,6 +107,29 @@ process_push_config() {
   ovpn_push_config="${1}"
   echo "Processing PUSH Config: '${ovpn_push_config}'"
   [[ -n ${ovpn_push_config} ]] && echo "push \"${ovpn_push_config}\"" >> "${TMP_PUSH_CONFIGFILE}"
+}
+
+process_route_config() {
+  local ovpn_route_config=''
+  ovpn_route_config="$1"
+  # If user passed "0" skip this, assume no extra routes
+  [[ "$ovpn_route_config" == "0" ]] && break;
+  echo "Processing Route Config: '${ovpn_route_config}'"
+  [[ -n ${ovpn_route_config} ]] && echo "route $(getroute ${ovpn_route_config})" >> "${TMP_ROUTE_CONFIGFILE}"
+}
+
+apply_default_routes() {
+  OVPN_ROUTES+=("192.168.254.0/24")
+}
+
+append_route_commands() {
+  if [[ ${#OVPN_ROUTES[@]} > 0 ]]; then
+    for i in "${OVPN_ROUTES[@]}"; do
+      process_route_config "$i"
+    done
+    echo -e "\n### Route Configurations Below" >> "${configuration_file}"
+    cat "${TMP_ROUTE_CONFIGFILE}" >> "${configuration_file}"
+  fi
 }
 
 append_push_commands() {
@@ -148,7 +173,7 @@ fi
 OVPN_AUTH=''
 OVPN_CIPHER=''
 OVPN_CLIENT_TO_CLIENT=''
-OVPN_CN=''
+OVPN_CN=${SERVER_DOMAIN}
 OVPN_COMP_LZO=0
 OVPN_DEFROUTE=1
 OVPN_DEVICE="tun"
@@ -173,9 +198,6 @@ OVPN_TLS_CIPHER=''
 # Parse arguments
 while getopts ":d:p:t" opt; do
   case ${opt} in
-    d)
-      OVPN_CN="${OPTARG}"
-      ;;
     p)
       OVPN_PORT="${OPTARG}"
       ;;
@@ -202,9 +224,12 @@ configuration_file="${OPENVPN}/openvpn.conf"
 generate_full_server_url
 remove_old_ovpn_vars
 remove_old_ovpn_config
+apply_default_routes
 save_ovpn_vars
 save_ovpn_config
+append_route_commands
 process_push_config "block-outside-dns"
 append_push_commands
 
-echo "Successfully generated openvpn server config"
+echo "Successfully generated openvpn server config for server at domain ${SERVER_DOMAIN}"
+cat ${configuration_file}
