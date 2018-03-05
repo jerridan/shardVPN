@@ -20,7 +20,7 @@ resource "aws_ecs_service" "blink_drive_service" {
 
 resource "aws_ecs_task_definition" "blink_drive_task" {
   family = "blink-drive-task"
-  network_mode = "host"
+  network_mode = "bridge"
   container_definitions = <<EOF
 [
   {
