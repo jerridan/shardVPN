@@ -2,7 +2,7 @@
 
 set -e
 
-BLINK_CERTIFIER_VERSION="test"
+BLINK_CERTIFIER_VERSION="1.1.0"
 
 sudo yum update -y
 sudo yum install -y docker
