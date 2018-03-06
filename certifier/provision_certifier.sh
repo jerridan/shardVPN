@@ -2,10 +2,9 @@
 
 set -e
 
-BLINK_CERTIFIER_VERSION="1.0.3"
+BLINK_CERTIFIER_VERSION="test"
 
 sudo yum update -y
 sudo yum install -y docker
 sudo service docker start
-sudo mkdir -p ~/blink/keys
-sudo docker run -v ~/blink/keys:/etc/blinkvpn jerridan/blink-certifier:${BLINK_CERTIFIER_VERSION}
+sudo docker run jerridan/blink-certifier:${BLINK_CERTIFIER_VERSION}
