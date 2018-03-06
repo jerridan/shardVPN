@@ -3,7 +3,7 @@ provider "aws" {
 }
 
 resource "aws_instance" "blink_certifier" {
-  ami = "ami-a954d1cd"
+  ami = "ami-03de5b67"
   instance_type = "t2.micro"
   key_name = "blink_certifier_key_pair"
   depends_on = ["aws_security_group.vpn_security_group"]
