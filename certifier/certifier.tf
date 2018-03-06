@@ -6,8 +6,8 @@ resource "aws_instance" "blink_certifier" {
   ami = "ami-03de5b67"
   instance_type = "t2.micro"
   key_name = "blink_certifier_key_pair"
-  depends_on = ["aws_security_group.vpn_security_group"]
-  security_groups = ["vpn_security_group"]
+  depends_on = ["aws_security_group.certifier_security_group"]
+  security_groups = ["certifier_security_group"]
   iam_instance_profile = "${aws_iam_instance_profile.blink_certifier_iam_profile.name}"
   connection = {
     type = "ssh"
@@ -25,8 +25,8 @@ resource "aws_key_pair" "blink_certifier_key_pair" {
   public_key = "${file("~/.ssh/terraform_rsa.pub")}"
 }
 
-resource "aws_security_group" "vpn_security_group" {
-  name = "vpn_security_group"
+resource "aws_security_group" "certifier_security_group" {
+  name = "certifier_security_group"
   description = "Open up all ports for now"
 
   ingress {
@@ -72,7 +72,7 @@ resource "aws_security_group" "vpn_security_group" {
   }
 
   tags {
-    Name = "vpn_security_group"
+    Name = "certifier_security_group"
   }
 }
 
