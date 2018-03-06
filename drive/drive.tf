@@ -197,7 +197,3 @@ resource "aws_iam_role_policy" "blink_vpn_ecs_instance_role_policy" {
 }
 EOF
 }
-
-output "public_ip" {
-  value = "${aws_instance.blink_drive_host.public_ip}"
-}

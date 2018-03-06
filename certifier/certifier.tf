@@ -135,7 +135,3 @@ resource "aws_iam_role_policy" "blink_certifier_policy" {
 }
 EOF
 }
-
-output "public_ip" {
-  value = "${aws_instance.blink_certifier.public_ip}"
-}
