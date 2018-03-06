@@ -20,19 +20,6 @@ resource "aws_instance" "blink_certifier" {
   }
 }
 
-resource "aws_s3_bucket" "blink_keys" {
-  bucket = "blink-keys"
-  acl = "private"
-  force_destroy = "true"
-  server_side_encryption_configuration {
-    rule {
-      apply_server_side_encryption_by_default {
-        sse_algorithm = "aws:kms"
-      }
-    }
-  }
-}
-
 resource "aws_key_pair" "blink_certifier_key_pair" {
   key_name = "blink_certifier_key_pair"
   public_key = "${file("~/.ssh/terraform_rsa.pub")}"
