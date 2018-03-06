@@ -83,7 +83,7 @@ resource "aws_key_pair" "blink_drive_key_pair" {
 
 resource "aws_security_group" "blink_drive_security_group" {
   name = "blink_drive_security_group"
-  description = "Allow ports 22 (ssh) and 1194 (openvpn)"
+  description = "Allow ports 22 (ssh), 443 and 1194 (openvpn) inbound, and all ports outbound"
 
   ingress {
     from_port   = 22
