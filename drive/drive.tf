@@ -68,6 +68,9 @@ resource "aws_instance" "blink_drive_host" {
   security_groups = ["blink_drive_security_group"]
   iam_instance_profile = "${aws_iam_instance_profile.blink_vpn_iam_profile.name}"
   user_data = "#!/bin/bash\necho ECS_CLUSTER=${aws_ecs_cluster.blink_drive_cluster.name} > /etc/ecs/ecs.config"
+  tags {
+    Name = "BlinkDrive"
+  }
   connection = {
     type = "ssh"
     user = "ec2-user"
@@ -83,7 +86,7 @@ resource "aws_key_pair" "blink_drive_key_pair" {
 
 resource "aws_security_group" "blink_drive_security_group" {
   name = "blink_drive_security_group"
-  description = "Allow ports 22 (ssh) and 1194 (openvpn)"
+  description = "Allow ports 22 (ssh), 443 and 1194 (openvpn) inbound, and all ports outbound"
 
   ingress {
     from_port   = 22
@@ -196,8 +199,4 @@ resource "aws_iam_role_policy" "blink_vpn_ecs_instance_role_policy" {
   ]
 }
 EOF
-}
-
-output "public_ip" {
-  value = "${aws_instance.blink_drive_host.public_ip}"
 }

@@ -3,12 +3,15 @@ provider "aws" {
 }
 
 resource "aws_instance" "blink_certifier" {
-  ami = "ami-a954d1cd"
+  ami = "ami-03de5b67"
   instance_type = "t2.micro"
   key_name = "blink_certifier_key_pair"
-  depends_on = ["aws_security_group.vpn_security_group"]
-  security_groups = ["vpn_security_group"]
+  depends_on = ["aws_security_group.certifier_security_group"]
+  security_groups = ["certifier_security_group"]
   iam_instance_profile = "${aws_iam_instance_profile.blink_certifier_iam_profile.name}"
+  tags {
+    Name = "BlinkCertifier"
+  }
   connection = {
     type = "ssh"
     user = "ec2-user"
@@ -20,27 +23,14 @@ resource "aws_instance" "blink_certifier" {
   }
 }
 
-resource "aws_s3_bucket" "blink_keys" {
-  bucket = "blink-keys"
-  acl = "private"
-  force_destroy = "true"
-  server_side_encryption_configuration {
-    rule {
-      apply_server_side_encryption_by_default {
-        sse_algorithm = "aws:kms"
-      }
-    }
-  }
-}
-
 resource "aws_key_pair" "blink_certifier_key_pair" {
   key_name = "blink_certifier_key_pair"
   public_key = "${file("~/.ssh/terraform_rsa.pub")}"
 }
 
-resource "aws_security_group" "vpn_security_group" {
-  name = "vpn_security_group"
-  description = "Open up all ports for now"
+resource "aws_security_group" "certifier_security_group" {
+  name = "certifier_security_group"
+  description = "Allow SSH in and HTTP/HTTPS traffic out"
 
   ingress {
     from_port   = 22
@@ -49,43 +39,22 @@ resource "aws_security_group" "vpn_security_group" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   egress {
-    from_port = 0
-    to_port = 65535
+    from_port = 80
+    to_port = 80
     protocol = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
-    from_port = 0
-    to_port = 65535
-    protocol = "udp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port = 0
-    to_port = 0
-    protocol = "icmp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port = 8
-    to_port = 0
-    protocol = "icmp"
+    from_port = 443
+    to_port = 443
+    protocol = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   tags {
-    Name = "vpn_security_group"
+    Name = "certifier_security_group"
   }
 }
 
@@ -147,8 +116,4 @@ resource "aws_iam_role_policy" "blink_certifier_policy" {
   ]
 }
 EOF
-}
-
-output "public_ip" {
-  value = "${aws_instance.blink_certifier.public_ip}"
 }
