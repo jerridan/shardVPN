@@ -2,8 +2,7 @@
 
 FROM alpine:latest
 
-RUN apk add --update bash easy-rsa openvpn python py-pip && \
-    pip install awscli && \
+RUN apk add --no-cache --update bash easy-rsa openvpn && \
     ln -s /usr/share/easy-rsa/easyrsa /usr/local/bin && \
     rm -rf /tmp/* /var/tmp/* /var/cache/apk/* /var/cache/distfiles/*
 
