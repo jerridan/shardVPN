@@ -9,6 +9,9 @@ resource "aws_instance" "blink_certifier" {
   depends_on = ["aws_security_group.certifier_security_group"]
   security_groups = ["certifier_security_group"]
   iam_instance_profile = "${aws_iam_instance_profile.blink_certifier_iam_profile.name}"
+  tags {
+    Name = "BlinkCertifier"
+  }
   connection = {
     type = "ssh"
     user = "ec2-user"

@@ -68,6 +68,9 @@ resource "aws_instance" "blink_drive_host" {
   security_groups = ["blink_drive_security_group"]
   iam_instance_profile = "${aws_iam_instance_profile.blink_vpn_iam_profile.name}"
   user_data = "#!/bin/bash\necho ECS_CLUSTER=${aws_ecs_cluster.blink_drive_cluster.name} > /etc/ecs/ecs.config"
+  tags {
+    Name = "BlinkDrive"
+  }
   connection = {
     type = "ssh"
     user = "ec2-user"
