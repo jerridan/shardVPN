@@ -27,7 +27,7 @@ resource "aws_key_pair" "blink_certifier_key_pair" {
 
 resource "aws_security_group" "certifier_security_group" {
   name = "certifier_security_group"
-  description = "Open up all ports for now"
+  description = "Allow SSH in and HTTP/HTTPS traffic out"
 
   ingress {
     from_port   = 22
@@ -36,38 +36,17 @@ resource "aws_security_group" "certifier_security_group" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   egress {
-    from_port = 0
-    to_port = 65535
+    from_port = 80
+    to_port = 80
     protocol = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
-    from_port = 0
-    to_port = 65535
-    protocol = "udp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port = 0
-    to_port = 0
-    protocol = "icmp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port = 8
-    to_port = 0
-    protocol = "icmp"
+    from_port = 443
+    to_port = 443
+    protocol = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
