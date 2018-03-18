@@ -228,7 +228,8 @@ apply_default_routes
 save_ovpn_vars
 save_ovpn_config
 append_route_commands
-process_push_config "block-outside-dns"
+process_push_config "redirect-gateway def1"
+#process_push_config "block-outside-dns" # Windows-only config
 append_push_commands
 
 echo "Successfully generated openvpn server config for server at domain ${SERVER_DOMAIN}"
