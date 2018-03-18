@@ -5,12 +5,10 @@
 set -e
 
 TMP_PUSH_CONFIGFILE=$(mktemp -t vpn_push.XXXXXXX)
-TMP_ROUTE_CONFIGFILE=$(mktemp -t vpn_route.XXXXXXX)
 
 on_exit() {
   echo "Removing temporary files..."
   rm -f "${TMP_PUSH_CONFIGFILE}"
-  rm -f "${TMP_ROUTE_CONFIGFILE}"
 }
 trap on_exit EXIT
 
@@ -109,29 +107,6 @@ process_push_config() {
   [[ -n ${ovpn_push_config} ]] && echo "push \"${ovpn_push_config}\"" >> "${TMP_PUSH_CONFIGFILE}"
 }
 
-process_route_config() {
-  local ovpn_route_config=''
-  ovpn_route_config="$1"
-  # If user passed "0" skip this, assume no extra routes
-  [[ "$ovpn_route_config" == "0" ]] && break;
-  echo "Processing Route Config: '${ovpn_route_config}'"
-  [[ -n ${ovpn_route_config} ]] && echo "route $(getroute ${ovpn_route_config})" >> "${TMP_ROUTE_CONFIGFILE}"
-}
-
-apply_default_routes() {
-  OVPN_ROUTES+=("192.168.254.0/24")
-}
-
-append_route_commands() {
-  if [[ ${#OVPN_ROUTES[@]} > 0 ]]; then
-    for i in "${OVPN_ROUTES[@]}"; do
-      process_route_config "$i"
-    done
-    echo -e "\n### Route Configurations Below" >> "${configuration_file}"
-    cat "${TMP_ROUTE_CONFIGFILE}" >> "${configuration_file}"
-  fi
-}
-
 append_push_commands() {
   [[ ${OVPN_DNS} == "1" ]] && for i in "${OVPN_DNS_SERVERS[@]}"; do
     process_push_config "dhcp-option DNS $i"
@@ -190,7 +165,6 @@ OVPN_NAT=0
 OVPN_PORT=1194
 OVPN_PROTO="udp"
 OVPN_PUSH=()
-OVPN_ROUTES=()
 OVPN_SERVER=10.8.0.0/24
 OVPN_SERVER_URL=''
 OVPN_TLS_CIPHER=''
@@ -224,10 +198,8 @@ configuration_file="${OPENVPN}/openvpn.conf"
 generate_full_server_url
 remove_old_ovpn_vars
 remove_old_ovpn_config
-apply_default_routes
 save_ovpn_vars
 save_ovpn_config
-append_route_commands
 process_push_config "redirect-gateway def1"
 #process_push_config "block-outside-dns" # Windows-only config
 append_push_commands
