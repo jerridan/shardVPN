@@ -33,10 +33,6 @@ EOF
 }
 
 add_config_options() {
-  if [[ ${OVPN_DEFROUTE} != "0" ]];then
-    echo "redirect-gateway def1" >> ${configuration_file}
-  fi
-
   if [[ -n "${OVPN_MTU}" ]]; then
     echo "tun-mtu ${OVPN_MTU}" >> ${configuration_file}
   fi
