@@ -33,37 +33,6 @@ $(cat ${BLINK_VOLUME}/ta.key)
 EOF
 }
 
-add_config_options() {
-  if [[ -n "${OVPN_MTU}" ]]; then
-    echo "tun-mtu ${OVPN_MTU}" >> ${configuration_file}
-  fi
-
-  if [[ -n "${OVPN_TLS_CIPHER}" ]]; then
-    echo "tls-cipher ${OVPN_TLS_CIPHER}" >> ${configuration_file}
-  fi
-
-  if [[ -n "${OVPN_CIPHER}" ]]; then
-    echo "cipher ${OVPN_CIPHER}" >> ${configuration_file}
-  fi
-
-  if [[ -n "${OVPN_AUTH}" ]]; then
-    echo "auth ${OVPN_AUTH}" >> ${configuration_file}
-  fi
-
-  if [[ -n "${OVPN_OTP_AUTH}" ]]; then
-    echo "auth-user-pass" >> ${configuration_file}
-    echo "auth-nocache" >> ${configuration_file}
-  fi
-
-  if [[ ${OVPN_COMP_LZO} == "1" ]]; then
-    echo "comp-lzo" >> ${configuration_file}
-  fi
-
-  if [[ -n "${OVPN_OTP_AUTH}" ]]; then
-    echo "reneg-sec 0" >> ${configuration_file}
-  fi
-}
-
 copy_client_config_to_s3() {
   aws s3 cp "${configuration_file}" s3://blink-keys/client.ovpn
 }
@@ -104,7 +73,6 @@ if [[ -f "${configuration_file}" ]]; then
 fi
 
 add_basic_ovpn_protocols
-add_config_options
 add_certificates_and_keys
 
 echo "Successfully generated openvpn client config"
