@@ -97,6 +97,7 @@ status /tmp/openvpn-status.log
 
 user nobody
 group nogroup
+remote-cert-tls client # Ensure that only hosts with a client certificate may connect
 EOF
 }
 
