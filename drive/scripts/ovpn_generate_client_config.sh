@@ -64,12 +64,6 @@ add_config_options() {
   fi
 }
 
-add_extra_client_config() {
-  for config in "${OVPN_EXTRA_CLIENT_CONFIG[@]}"; do
-    echo "${config}" >> ${configuration_file}
-  done
-}
-
 copy_client_config_to_s3() {
   aws s3 cp "${configuration_file}" s3://blink-keys/client.ovpn
 }
@@ -111,7 +105,6 @@ fi
 
 add_basic_ovpn_protocols
 add_config_options
-add_extra_client_config
 add_certificates_and_keys
 
 echo "Successfully generated openvpn client config"
