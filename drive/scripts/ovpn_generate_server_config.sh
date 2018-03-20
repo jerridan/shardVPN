@@ -83,8 +83,7 @@ key ${BLINK_VOLUME}/${SERVERNAME}.key
 ca ${BLINK_VOLUME}/ca.crt
 cert ${BLINK_VOLUME}/${SERVERNAME}.crt
 dh ${BLINK_VOLUME}/dh.pem
-tls-auth ${BLINK_VOLUME}/ta.key
-key-direction 0
+tls-crypt ${BLINK_VOLUME}/ta.key
 keepalive ${OVPN_KEEPALIVE}
 persist-key
 persist-tun
@@ -97,6 +96,9 @@ status /tmp/openvpn-status.log
 
 user nobody
 group nogroup
+remote-cert-tls client # Ensure that only hosts with a client certificate may connect
+ncp-ciphers AES-256-GCM:AES-128-GCM:AES-256-CBC # Allowed ciphers for data channel encryption
+auth SHA256 # Algorithm for HMAC-authenticating data and control channel packets
 EOF
 }
 
@@ -156,8 +158,6 @@ OVPN_DEVICEN=0
 OVPN_DISABLE_PUSH_BLOCK_DNS=0
 OVPN_DNS=1
 OVPN_DNS_SERVERS=([0]="8.8.8.8" [1]="8.8.4.4")
-OVPN_EXTRA_CLIENT_CONFIG=()
-OVPN_EXTRA_SERVER_CONFIG=()
 OVPN_FRAGMENT=''
 OVPN_KEEPALIVE="10 60"
 OVPN_MTU=''

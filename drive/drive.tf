@@ -25,9 +25,9 @@ resource "aws_ecs_task_definition" "blink_drive_task" {
 [
   {
     "name": "blink-drive-1",
-    "image": "jerridan/blink-drive:1.0.0",
-    "memory": 512,
-    "cpu": 10,
+    "image": "jerridan/blink-drive:1.0.1",
+    "memory": 256,
+    "cpu": 256,
     "privileged": true,
     "portMappings": [
       {

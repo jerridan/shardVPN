@@ -9,9 +9,10 @@ cat >> ${configuration_file} <<EOF
 client
 nobind
 dev ${OVPN_DEVICE}
-remote-cert-tls server
+remote-cert-tls server # Ensure that the host being connected to is a server
 remote ${OVPN_CN} ${OVPN_PORT} ${OVPN_PROTO}
-key-direction 1
+ncp-ciphers AES-256-GCM:AES-128-GCM:AES-256-CBC # Allowed ciphers for data channel encryption
+auth SHA256 # Algorithm for HMAC-authenticating data and control channel packets
 EOF
 }
 
@@ -26,47 +27,10 @@ $(openssl x509 -in ${BLINK_VOLUME}/${CLIENTNAME}.crt)
 <ca>
 $(cat ${BLINK_VOLUME}/ca.crt)
 </ca>
-<tls-auth>
+<tls-crypt>
 $(cat ${BLINK_VOLUME}/ta.key)
-</tls-auth>
+</tls-crypt>
 EOF
-}
-
-add_config_options() {
-  if [[ -n "${OVPN_MTU}" ]]; then
-    echo "tun-mtu ${OVPN_MTU}" >> ${configuration_file}
-  fi
-
-  if [[ -n "${OVPN_TLS_CIPHER}" ]]; then
-    echo "tls-cipher ${OVPN_TLS_CIPHER}" >> ${configuration_file}
-  fi
-
-  if [[ -n "${OVPN_CIPHER}" ]]; then
-    echo "cipher ${OVPN_CIPHER}" >> ${configuration_file}
-  fi
-
-  if [[ -n "${OVPN_AUTH}" ]]; then
-    echo "auth ${OVPN_AUTH}" >> ${configuration_file}
-  fi
-
-  if [[ -n "${OVPN_OTP_AUTH}" ]]; then
-    echo "auth-user-pass" >> ${configuration_file}
-    echo "auth-nocache" >> ${configuration_file}
-  fi
-
-  if [[ ${OVPN_COMP_LZO} == "1" ]]; then
-    echo "comp-lzo" >> ${configuration_file}
-  fi
-
-  if [[ -n "${OVPN_OTP_AUTH}" ]]; then
-    echo "reneg-sec 0" >> ${configuration_file}
-  fi
-}
-
-add_extra_client_config() {
-  for config in "${OVPN_EXTRA_CLIENT_CONFIG[@]}"; do
-    echo "${config}" >> ${configuration_file}
-  done
 }
 
 copy_client_config_to_s3() {
@@ -109,8 +73,6 @@ if [[ -f "${configuration_file}" ]]; then
 fi
 
 add_basic_ovpn_protocols
-add_config_options
-add_extra_client_config
 add_certificates_and_keys
 
 echo "Successfully generated openvpn client config"
