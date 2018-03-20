@@ -98,6 +98,7 @@ status /tmp/openvpn-status.log
 user nobody
 group nogroup
 remote-cert-tls client # Ensure that only hosts with a client certificate may connect
+ncp-ciphers AES-256-GCM:AES-128-GCM:AES-256-CBC # Allowed ciphers for data channel encryption
 EOF
 }
 

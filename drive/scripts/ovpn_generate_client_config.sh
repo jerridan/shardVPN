@@ -12,6 +12,7 @@ dev ${OVPN_DEVICE}
 remote-cert-tls server # Ensure that the host being connected to is a server
 remote ${OVPN_CN} ${OVPN_PORT} ${OVPN_PROTO}
 key-direction 1
+ncp-ciphers AES-256-GCM:AES-128-GCM:AES-256-CBC # Allowed ciphers for data channel encryption
 EOF
 }
 
