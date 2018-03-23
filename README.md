@@ -8,9 +8,10 @@ It is still under development, and may change drastically over time.
 ## Dependencies
 Before you are able to use BlinkVPN, you will need to have the following required dependencies.
 1. A copy of this repository on your local machine
-1. An AWS account, with the proper credentials (see 'Setting up AWS Credentials')
-1. Terraform installed on your local machine (see 'Installing Terraform')
-1. An RSA key pair stored on your local machine at `~/.ssh/terraform_rsa` (see 'Setting up the Key Pair')
+1. An AWS account, with the proper credentials (see [Setting up AWS Credentials](#setting-up-aws-credentials))
+1. Terraform installed on your local machine (see [Installing Terraform](#installing-terraform))
+1. An RSA key pair stored on your local machine at `~/.ssh/terraform_rsa`
+(see [Setting up the Key Pair](#setting-up-the-key-pair))
 
 ### Setting up AWS Credentials
 BlinkVPN uses Terraform to create, set up, and tear down the necessary AWS resources on which the VPN runs. Terraform
@@ -27,7 +28,7 @@ In the end, your default AWS credentials on your local system must have the abov
   1. Go to the IAM service in your AWS account.
   1. Create a user. You may name it whatever you like.
   1. Create a group. You may name this whatever you like, but I recommend giving it an identifiable name, like 
-  'blinkvpn'.
+  'blink_vpn'.
   1. Assign the user to the group.
   1. In the group, attach the permission policies listed above.
   1. In the user, go to the 'Security Credentials' page and create an access key.
