@@ -122,6 +122,7 @@ Note that while there is a CA certificate placed in the S3 bucket, this is NOT t
 used to verify that other certificates were signed by the CA key, and cannot itself sign anything.
 
 **SHA256 Authentication of all Data**
+
 All data packets passing between the BlinkVPN client and server are signed and authenticated using the SSL SHA-256 
 cryptographic hash algorithm. 
 
