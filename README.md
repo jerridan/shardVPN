@@ -1,5 +1,5 @@
 # BlinkVPN
-This tool allows for the temporary creation of a VPN server. You can create it,use it for however long you need, and 
+This tool allows for the temporary creation of a VPN server. You can create it, use it for however long you need, and 
 then promptly destroy it.
 
 BlinkVPN has only been tested on macOS, and may or may not work as expected with other operating systems.
