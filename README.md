@@ -5,6 +5,17 @@ then promptly destroy it.
 BlinkVPN has only been tested on macOS, and may or may not work as expected with other operating systems.
 It is still under development, and may change drastically over time.
 
+## Contents
+- [Dependencies](#dependencies)
+  - [Setting up AWS Credentials](#setting-up-aws-credentials)
+  - [Installing Terraform](#installing-terraform)
+  - [Setting up the Key Pair](#setting-up-the-key-pair)
+- [Using BlinkVPN](#using-blinkvpn)
+  - [Running BlinkVPN](#running-blinkvpn)
+  - [Stopping BlinkVPN](#stopping-blinkvpn)
+- [Security](#security)
+- [Troubleshooting](#troubleshooting)
+
 ## Dependencies
 Before you are able to use BlinkVPN, you will need to have the following required dependencies.
 1. A copy of this repository on your local machine
