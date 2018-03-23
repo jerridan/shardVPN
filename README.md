@@ -133,4 +133,14 @@ All data channel packets are encrypted with one of the following ciphers, in ord
 1. AES-256-CBC
 
 If your OpenVPN software is using OpenVPN 2.4 or higher, AES-256-GCM will be the default. For older versions, 
-AES-256-CBC will be used. 
+AES-256-CBC will be used.
+
+## Troubleshooting
+
+**DNS options are not being set properly**
+
+You must ensure that the client configuration file has permission to manually set network settings on your local 
+machine. This is because blinkVPN will set your machine to use Google's DNS servers.
+
+To fix this in Tunnelblick, simply open Tunnelblick, go to "Advanced", and make sure that "Allow changes to 
+manually-set network settings" is selected.
