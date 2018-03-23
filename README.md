@@ -7,6 +7,7 @@ It is still under development, and may change drastically over time.
 
 ## Dependencies
 Before you are able to use BlinkVPN, you will need to have the following required dependencies.
+1. A copy of this repository on your local machine
 1. An AWS account, with the proper credentials (see 'Setting up AWS Credentials')
 1. Terraform installed on your local machine (see 'Installing Terraform')
 1. An RSA key pair stored on your local machine at `~/.ssh/terraform_rsa` (see 'Setting up the Key Pair')
@@ -52,3 +53,41 @@ generating this key, I have always found
 to be helpful.
 
 
+## Using BlinkVPN
+
+### Running BlinkVPN
+Once you have all of the dependencies set up, you can run BlinkVPN as follows:
+1. Navigate to the main BlinkVPN folder.
+1. Run `build_vpn_from_scratch.sh`.
+1. Once the script has finished running, go to the S3 service in your AWS account.
+1. In the 'blink_keys' bucket, you will see a number of files. Once your VPN server has initialized, a file with the 
+name `client.ovpn` will appear. This takes ~3 minutes. 
+1. Download the `client.ovpn` file.
+1. Use the `client.ovpn` file with your favourite OpenVPN-compatible VPN software to establish a connection with the 
+server.
+    - If you are using macOS, I recommend [Tunnelblick](https://tunnelblick.net/)
+1. Presto! You should now be connected to your own private VPN server!
+
+#### More about the `build_vpn_from_scratch.sh` script
+This script does the following:
+1. Runs `terraform apply` from the main folder, which create the S3 bucket where the certificates and keys are stored.
+1. Runs `terraform apply` from the folder `certifier`, which creates an EC2 instance that generates all of the 
+necessary keys and certificates required for a client - server VPN connection.
+1. Runs `terraform destroy` from the folder `certifier` to tear down that EC2 server, as it is no longer needed.
+1. Runs `terraform apply` from the folder `drive`, which creates the VPN server that your local machine will connect
+ to.
+ 
+If you wish, you may run these commands manually to achieve the same result. You can even SSH into the servers yourself 
+using the RSA key you 
+generated, if you want to have a look around.
+
+### Stopping BlinkVPN
+1. If you started BlinkVPN using the `build_vpn_from_scratch.sh` script, then run `destroy_drive.sh` from the main 
+blinkVPN folder.
+
+#### More about the `destroy_drive.sh` script
+This script does the following:
+1. Runs `terraform destroy` from the main folder, to remove the 'blink_keys' bucket.
+1. Runs `terraform destroy` from the folder `drive`, which tears down the VPN server.
+
+If you wish, you may run these commands manually to achieve the same result.
