@@ -92,3 +92,45 @@ This script does the following:
 1. Runs `terraform destroy` from the folder `drive`, which tears down the VPN server.
 
 If you wish, you may run these commands manually to achieve the same result.
+
+## Security
+BlinkVPN is built for the purpose of keeping the user safe and secure. Below are some of the notable ways that it 
+does this.
+
+**Separation of the Certificate Authority from the VPN server**
+
+The Certificate Authority (CA) is used to sign the server and client keys and certificates. This identifies them as 
+trustworthy (i.e. the server knows the client is trustworthy, and vice versa). If an outside source were to gain 
+access to the CA key, new keys could be generated to gain access to the VPN.
+
+In order to mitigate this risk, once the keys and certificates are generated, the certifier server, which contains 
+the CA key, is torn down. No further keys or certificates can be generated at this point beyond what has been placed 
+in the S3 bucket.
+
+Note that while there is a CA certificate placed in the S3 bucket, this is NOT the CA key. The CA certificate is only 
+used to verify that other certificates were signed by the CA key, and cannot itself sign anything.
+
+**SHA256 Authentication of all Data**
+All data packets passing between the BlinkVPN client and server are signed and authenticated using the SSL SHA-256 
+cryptographic hash algorithm. 
+
+**SHA256 Encryption of all Control Channel Packets**
+
+A control channel packet is a packet of data sent between the client and server during the initial connection and 
+later shutdown phases.
+
+All control channel packets are encrypted using a SSL SHA-256 hash algorithm in order to mask their contents. This 
+helps to prevent Man-in-the-Middle attacks, and also helps to keep these packets from being identified as being part
+of a VPN.
+
+**Encryption of all Data Channel Packets**
+
+A data channel packet is any packet of data sent over the VPN after a connection has been initialized.
+
+All data channel packets are encrypted with one of the following ciphers, in order of descending preference:
+1. AES-256-GCM
+1. AES-128-GCM
+1. AES-256-CBC
+
+If your OpenVPN software is using OpenVPN 2.4 or higher, AES-256-GCM will be the default. For older versions, 
+AES-256-CBC will be used. 
