@@ -9,15 +9,13 @@ RUN apk add --update bash easy-rsa openvpn python py-pip && \
 
 ENV OPENVPN /etc/openvpn
 ENV OVPN_ENV $OPENVPN/ovpn_env.sh
-ENV BLINK_VOLUME /etc/blinkvpn
-ENV CLIENTNAME "blink-client"
-ENV SERVERNAME "blink-drive"
+ENV SHARD_VPN_VOLUME /etc/shardvpn
+ENV CLIENTNAME "shard-vpn-client"
+ENV SERVERNAME "shard-vpn-drive"
 
 RUN ["mkdir", "-p", "/etc/openvpn/server"]
 RUN ["mkdir", "-p", "/etc/openvpn/client"]
-RUN ["mkdir", "/etc/blinkvpn"]
-
-#VOLUME ["/etc/blinkvpn"]
+RUN ["mkdir", "/etc/shardvpn"]
 
 ADD scripts /usr/local/bin
 RUN chmod a+x /usr/local/bin/*

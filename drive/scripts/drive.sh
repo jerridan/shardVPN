@@ -3,7 +3,7 @@
 set -e
 
 get_keys_from_s3() {
-  aws s3 sync "s3://blink-keys" "${BLINK_VOLUME}"
+  aws s3 sync "s3://shard-vpn-keys" "${SHARD_VPN_VOLUME}"
 }
 
 generate_openvpn_server_config() {
@@ -20,6 +20,6 @@ start_openvpn() {
 }
 
 get_keys_from_s3
-generate_openvpn_server_config blink-drive.vpn.example
+generate_openvpn_server_config
 generate_openvpn_client_config
 start_openvpn

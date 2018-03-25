@@ -98,7 +98,7 @@ generated, if you want to have a look around.
 
 #### More about the `destroy_drive.sh` script
 This script does the following:
-1. Runs `terraform destroy` from the main folder, to remove the 'shard_keys' bucket.
+1. Runs `terraform destroy` from the main folder, to remove the 'shard_vpn_keys' bucket.
 1. Runs `terraform destroy` from the folder `drive`, which tears down the VPN server.
 
 If you wish, you may run these commands manually to achieve the same result.

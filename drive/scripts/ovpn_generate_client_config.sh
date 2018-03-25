@@ -19,22 +19,22 @@ EOF
 add_certificates_and_keys() {
 cat >> ${configuration_file} <<EOF
 <key>
-$(cat ${BLINK_VOLUME}/${CLIENTNAME}.key)
+$(cat ${SHARD_VPN_VOLUME}/${CLIENTNAME}.key)
 </key>
 <cert>
-$(openssl x509 -in ${BLINK_VOLUME}/${CLIENTNAME}.crt)
+$(openssl x509 -in ${SHARD_VPN_VOLUME}/${CLIENTNAME}.crt)
 </cert>
 <ca>
-$(cat ${BLINK_VOLUME}/ca.crt)
+$(cat ${SHARD_VPN_VOLUME}/ca.crt)
 </ca>
 <tls-crypt>
-$(cat ${BLINK_VOLUME}/ta.key)
+$(cat ${SHARD_VPN_VOLUME}/ta.key)
 </tls-crypt>
 EOF
 }
 
 copy_client_config_to_s3() {
-  aws s3 cp "${configuration_file}" s3://blink-keys/client.ovpn
+  aws s3 cp "${configuration_file}" s3://shard-vpn-keys/client.ovpn
 }
 
 # Enable debug mode if ENV variable DEBUG == 1
@@ -46,27 +46,27 @@ if ! source "${OVPN_ENV}"; then
   echo "File ${OVPN_ENV} does not exist."
 fi
 
-if [[ ! -f "${BLINK_VOLUME}/${CLIENTNAME}.key" ]]; then
-  echo "Client key at ${BLINK_VOLUME}/${CLIENTNAME}.key not found"
+if [[ ! -f "${SHARD_VPN_VOLUME}/${CLIENTNAME}.key" ]]; then
+  echo "Client key at ${SHARD_VPN_VOLUME}/${CLIENTNAME}.key not found"
   exit 1
 fi
 
-if [[ ! -f "${BLINK_VOLUME}/${CLIENTNAME}.crt" ]]; then
-  echo "Client certificate at ${BLINK_VOLUME}/${CLIENTNAME}.crt not found"
+if [[ ! -f "${SHARD_VPN_VOLUME}/${CLIENTNAME}.crt" ]]; then
+  echo "Client certificate at ${SHARD_VPN_VOLUME}/${CLIENTNAME}.crt not found"
   exit 1
 fi
 
-if [[ ! -f "${BLINK_VOLUME}/ca.crt" ]]; then
-  echo "Certificate authority at ${BLINK_VOLUME}/ca.crt not found"
+if [[ ! -f "${SHARD_VPN_VOLUME}/ca.crt" ]]; then
+  echo "Certificate authority at ${SHARD_VPN_VOLUME}/ca.crt not found"
   exit 1
 fi
 
-if [[ ! -f "${BLINK_VOLUME}/ta.key" ]]; then
-  echo "HMAC key at ${BLINK_VOLUME}/ta.key not found"
+if [[ ! -f "${SHARD_VPN_VOLUME}/ta.key" ]]; then
+  echo "HMAC key at ${SHARD_VPN_VOLUME}/ta.key not found"
   exit 1
 fi
 
-configuration_file="${BLINK_VOLUME}/${CLIENTNAME}.ovpn"
+configuration_file="${SHARD_VPN_VOLUME}/${CLIENTNAME}.ovpn"
 
 if [[ -f "${configuration_file}" ]]; then
   rm "${configuration_file}"

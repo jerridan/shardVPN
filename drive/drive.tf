@@ -2,30 +2,30 @@ provider "aws" {
   region = "ca-central-1"
 }
 
-resource "aws_cloudwatch_log_group" "blink_drive_log_group" {
-  name = "blink-drive-log-group"
+resource "aws_cloudwatch_log_group" "shard_vpn_drive_log_group" {
+  name = "shard-vpn-drive-log-group"
   retention_in_days = 1
 }
 
-resource "aws_ecs_cluster" "blink_drive_cluster" {
-  name = "blink-drive-cluster"
+resource "aws_ecs_cluster" "shard_vpn_drive_cluster" {
+  name = "shard-vpn-drive-cluster"
 }
 
-resource "aws_ecs_service" "blink_drive_service" {
-  name = "blink-drive-service"
-  cluster = "${aws_ecs_cluster.blink_drive_cluster.id}"
-  task_definition = "${aws_ecs_task_definition.blink_drive_task.arn}"
+resource "aws_ecs_service" "shard_vpn_drive_service" {
+  name = "shard-vpn-drive-service"
+  cluster = "${aws_ecs_cluster.shard_vpn_drive_cluster.id}"
+  task_definition = "${aws_ecs_task_definition.shard_vpn_drive_task.arn}"
   desired_count = 1
 }
 
-resource "aws_ecs_task_definition" "blink_drive_task" {
-  family = "blink-drive-task"
+resource "aws_ecs_task_definition" "shard_vpn_drive_task" {
+  family = "shard-vpn-drive-task"
   network_mode = "bridge"
   container_definitions = <<EOF
 [
   {
-    "name": "blink-drive-1",
-    "image": "jerridan/blink-drive:1.0.1",
+    "name": "shard-vpn-drive-1",
+    "image": "jerridan/shard-vpn-drive:1.0.1",
     "memory": 256,
     "cpu": 256,
     "privileged": true,
@@ -44,15 +44,15 @@ resource "aws_ecs_task_definition" "blink_drive_task" {
     "logConfiguration": {
       "logDriver": "awslogs",
       "options": {
-        "awslogs-group": "blink-drive-log-group",
+        "awslogs-group": "shard-vpn-drive-log-group",
         "awslogs-region": "ca-central-1",
-        "awslogs-stream-prefix": "blink-drive"
+        "awslogs-stream-prefix": "shard-vpn-drive"
       }
     },
     "environment": [
       {
         "name": "SERVER_DOMAIN",
-        "value": "${aws_instance.blink_drive_host.public_ip}"
+        "value": "${aws_instance.shard_vpn_drive_host.public_ip}"
       }
     ]
   }
@@ -60,16 +60,16 @@ resource "aws_ecs_task_definition" "blink_drive_task" {
 EOF
 }
 
-resource "aws_instance" "blink_drive_host" {
+resource "aws_instance" "shard_vpn_drive_host" {
   ami = "ami-5ac94e3e"
   instance_type = "t2.micro"
-  key_name = "blink_drive_key_pair"
-  depends_on = ["aws_security_group.blink_drive_security_group"]
-  security_groups = ["blink_drive_security_group"]
-  iam_instance_profile = "${aws_iam_instance_profile.blink_vpn_iam_profile.name}"
-  user_data = "#!/bin/bash\necho ECS_CLUSTER=${aws_ecs_cluster.blink_drive_cluster.name} > /etc/ecs/ecs.config"
+  key_name = "shard_vpn_drive_key_pair"
+  depends_on = ["aws_security_group.shard_vpn_drive_security_group"]
+  security_groups = ["shard_vpn_drive_security_group"]
+  iam_instance_profile = "${aws_iam_instance_profile.shard_vpn_vpn_iam_profile.name}"
+  user_data = "#!/bin/bash\necho ECS_CLUSTER=${aws_ecs_cluster.shard_vpn_drive_cluster.name} > /etc/ecs/ecs.config"
   tags {
-    Name = "BlinkDrive"
+    Name = "ShardVPNDrive"
   }
   connection = {
     type = "ssh"
@@ -79,13 +79,13 @@ resource "aws_instance" "blink_drive_host" {
   }
 }
 
-resource "aws_key_pair" "blink_drive_key_pair" {
-  key_name = "blink_drive_key_pair"
+resource "aws_key_pair" "shard_vpn_drive_key_pair" {
+  key_name = "shard_vpn_drive_key_pair"
   public_key = "${file("~/.ssh/terraform_rsa.pub")}"
 }
 
-resource "aws_security_group" "blink_drive_security_group" {
-  name = "blink_drive_security_group"
+resource "aws_security_group" "shard_vpn_drive_security_group" {
+  name = "shard_vpn_drive_security_group"
   description = "Allow ports 22 (ssh), 443 and 1194 (openvpn) inbound, and all ports outbound"
 
   ingress {
@@ -138,17 +138,17 @@ resource "aws_security_group" "blink_drive_security_group" {
   }
 
   tags {
-    Name = "blink_drive_security_group"
+    Name = "shard_vpn_drive_security_group"
   }
 }
 
-resource "aws_iam_instance_profile" "blink_vpn_iam_profile" {
-  name = "blink_vpn_iam_profile"
-  role = "${aws_iam_role.blink_vpn_ecs_instance_role.name}"
+resource "aws_iam_instance_profile" "shard_vpn_vpn_iam_profile" {
+  name = "shard_vpn_vpn_iam_profile"
+  role = "${aws_iam_role.shard_vpn_vpn_ecs_instance_role.name}"
 }
 
-resource "aws_iam_role" "blink_vpn_ecs_instance_role" {
-  name = "blink_vpn_ecs_instance_role"
+resource "aws_iam_role" "shard_vpn_vpn_ecs_instance_role" {
+  name = "shard_vpn_vpn_ecs_instance_role"
   assume_role_policy = <<EOF
 {
   "Version": "2012-10-17",
@@ -166,9 +166,9 @@ resource "aws_iam_role" "blink_vpn_ecs_instance_role" {
 EOF
 }
 
-resource "aws_iam_role_policy" "blink_vpn_ecs_instance_role_policy" {
-  name = "blink_vpn_ecs_instance_role_policy"
-  role = "${aws_iam_role.blink_vpn_ecs_instance_role.id}"
+resource "aws_iam_role_policy" "shard_vpn_vpn_ecs_instance_role_policy" {
+  name = "shard_vpn_vpn_ecs_instance_role_policy"
+  role = "${aws_iam_role.shard_vpn_vpn_ecs_instance_role.id}"
   policy = <<EOF
 {
   "Version": "2012-10-17",
