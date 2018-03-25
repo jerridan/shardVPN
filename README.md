@@ -1,8 +1,8 @@
-# BlinkVPN
+# ShardVPN
 This tool allows for the temporary creation of a VPN server. You can create it, use it for however long you need, and 
 then promptly destroy it.
 
-BlinkVPN has only been tested on macOS, and may or may not work as expected with other operating systems.
+ShardVPN has only been tested on macOS, and may or may not work as expected with other operating systems.
 It is still under development, and may change drastically over time.
 
 ## Contents
@@ -10,14 +10,14 @@ It is still under development, and may change drastically over time.
   - [Setting up AWS Credentials](#setting-up-aws-credentials)
   - [Installing Terraform](#installing-terraform)
   - [Setting up the Key Pair](#setting-up-the-key-pair)
-- [Using BlinkVPN](#using-blinkvpn)
-  - [Running BlinkVPN](#running-blinkvpn)
-  - [Stopping BlinkVPN](#stopping-blinkvpn)
+- [Using ShardVPN](#using-shardvpn)
+  - [Running ShardVPN](#running-shardvpn)
+  - [Stopping ShardVPN](#stopping-shardvpn)
 - [Security](#security)
 - [Troubleshooting](#troubleshooting)
 
 ## Dependencies
-Before you are able to use BlinkVPN, you will need to have the following required dependencies.
+Before you are able to use ShardVPN, you will need to have the following required dependencies.
 1. A copy of this repository on your local machine
 1. An AWS account, with the proper credentials (see [Setting up AWS Credentials](#setting-up-aws-credentials))
 1. Terraform installed on your local machine (see [Installing Terraform](#installing-terraform))
@@ -25,7 +25,7 @@ Before you are able to use BlinkVPN, you will need to have the following require
 (see [Setting up the Key Pair](#setting-up-the-key-pair))
 
 ### Setting up AWS Credentials
-BlinkVPN uses Terraform to create, set up, and tear down the necessary AWS resources on which the VPN runs. Terraform
+ShardVPN uses Terraform to create, set up, and tear down the necessary AWS resources on which the VPN runs. Terraform
  can only operate with the resources on your account that you grant it access to. At this time, the following 
  permissions are required:
  - AmazonS3FullAccess
@@ -39,7 +39,7 @@ In the end, your default AWS credentials on your local system must have the abov
   1. Go to the IAM service in your AWS account.
   1. Create a user. You may name it whatever you like.
   1. Create a group. You may name this whatever you like, but I recommend giving it an identifiable name, like 
-  'blink_vpn'.
+  'shard_vpn'.
   1. Assign the user to the group.
   1. In the group, attach the permission policies listed above.
   1. In the user, go to the 'Security Credentials' page and create an access key.
@@ -65,14 +65,14 @@ generating this key, I have always found
 to be helpful.
 
 
-## Using BlinkVPN
+## Using ShardVPN
 
-### Running BlinkVPN
-Once you have all of the dependencies set up, you can run BlinkVPN as follows:
-1. Navigate to the main BlinkVPN folder.
+### Running ShardVPN
+Once you have all of the dependencies set up, you can run ShardVPN as follows:
+1. Navigate to the main ShardVPN folder.
 1. Run `build_vpn_from_scratch.sh`.
 1. Once the script has finished running, go to the S3 service in your AWS account.
-1. In the 'blink_keys' bucket, you will see a number of files. Once your VPN server has initialized, a file with the 
+1. In the 'shard_keys' bucket, you will see a number of files. Once your VPN server has initialized, a file with the 
 name `client.ovpn` will appear. This takes ~3 minutes. 
 1. Download the `client.ovpn` file.
 1. Use the `client.ovpn` file with your favourite OpenVPN-compatible VPN software to establish a connection with the 
@@ -93,19 +93,18 @@ If you wish, you may run these commands manually to achieve the same result. You
 using the RSA key you 
 generated, if you want to have a look around.
 
-### Stopping BlinkVPN
-1. If you started BlinkVPN using the `build_vpn_from_scratch.sh` script, then run `destroy_drive.sh` from the main 
-blinkVPN folder.
+### Stopping ShardVPN
+1. If you started ShardVPN using the `build_vpn_from_scratch.sh` script, then run `destroy_drive.sh` from the main folder.
 
 #### More about the `destroy_drive.sh` script
 This script does the following:
-1. Runs `terraform destroy` from the main folder, to remove the 'blink_keys' bucket.
+1. Runs `terraform destroy` from the main folder, to remove the 'shard_keys' bucket.
 1. Runs `terraform destroy` from the folder `drive`, which tears down the VPN server.
 
 If you wish, you may run these commands manually to achieve the same result.
 
 ## Security
-BlinkVPN is built for the purpose of keeping the user safe and secure. Below are some of the notable ways that it 
+ShardVPN is built for the purpose of keeping the user safe and secure. Below are some of the notable ways that it 
 does this.
 
 **Separation of the Certificate Authority from the VPN server**
@@ -123,7 +122,7 @@ used to verify that other certificates were signed by the CA key, and cannot its
 
 **SHA256 Authentication of all Data**
 
-All data packets passing between the BlinkVPN client and server are signed and authenticated using the SSL SHA-256 
+All data packets passing between the ShardVPN client and server are signed and authenticated using the SSL SHA-256 
 cryptographic hash algorithm. 
 
 **SHA256 Encryption of all Control Channel Packets**
@@ -152,7 +151,7 @@ AES-256-CBC will be used.
 **DNS options are not being set properly**
 
 You must ensure that the client configuration file has permission to manually set network settings on your local 
-machine. This is because blinkVPN will set your machine to use Google's DNS servers.
+machine. This is because ShardVPN will set your machine to use Google's DNS servers.
 
 To fix this in Tunnelblick, simply open Tunnelblick, go to "Advanced", and make sure that "Allow changes to 
 manually-set network settings" is selected.
