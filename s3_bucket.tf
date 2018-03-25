@@ -2,8 +2,8 @@ provider "aws" {
   region = "ca-central-1"
 }
 
-resource "aws_s3_bucket" "blink_keys" {
-  bucket = "blink-keys"
+resource "aws_s3_bucket" "shard_vpn_keys" {
+  bucket = "shard-vpn-keys"
   acl = "private"
   force_destroy = "true"
   server_side_encryption_configuration {
