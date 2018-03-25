@@ -72,7 +72,8 @@ Once you have all of the dependencies set up, you can run ShardVPN as follows:
 1. Navigate to the main ShardVPN folder.
 1. Run `build_vpn_from_scratch.sh`.
 1. Once the script has finished running, go to the S3 service in your AWS account.
-1. In the 'shard_keys' bucket, you will see a number of files. Once your VPN server has initialized, a file with the 
+1. In the 'shard-vpn-keys' bucket, you will see a number of files. Once your VPN server has initialized, a file with 
+the 
 name `client.ovpn` will appear. This takes ~3 minutes. 
 1. Download the `client.ovpn` file.
 1. Use the `client.ovpn` file with your favourite OpenVPN-compatible VPN software to establish a connection with the 
@@ -98,7 +99,7 @@ generated, if you want to have a look around.
 
 #### More about the `destroy_drive.sh` script
 This script does the following:
-1. Runs `terraform destroy` from the main folder, to remove the 'shard_vpn_keys' bucket.
+1. Runs `terraform destroy` from the main folder, to remove the 'shard-vpn-keys' bucket.
 1. Runs `terraform destroy` from the folder `drive`, which tears down the VPN server.
 
 If you wish, you may run these commands manually to achieve the same result.
