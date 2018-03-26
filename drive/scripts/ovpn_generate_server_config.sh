@@ -37,26 +37,9 @@ getroute() {
   echo ${1%/*} $(cidr2mask $1)
 }
 
-usage() {
-  echo "Usage of ovpn_genconfig:"
-  echo " -d Server public domain (ex. vpn.example.com)"
-  echo
-  echo "optional arguments:"
-  echo " -p Server port. Default: 1194"
-  echo " -t Server VPN protocol. Default: 'udp'"
-}
-
 generate_full_server_url() {
-  if [[ -n "${OVPN_CN:-}" ]]; then
-    OVPN_SERVER_URL="${OVPN_PROTO}://${OVPN_CN}:${OVPN_PORT}"
-  else
-    set +x
-    echo "Domain name not specified, see '-d'"
-    usage
-    exit 1
-  fi
+  OVPN_SERVER_URL="${VPN_TRAFFIC_PROTOCOL}://${OVPN_CN}:${VPN_PORT}"
 }
-
 remove_old_ovpn_vars() {
   if [[ -f "${OVPN_ENV}" ]]; then
     rm "${OVPN_ENV}"
@@ -88,9 +71,9 @@ keepalive ${OVPN_KEEPALIVE}
 persist-key
 persist-tun
 
-proto ${OVPN_PROTO}
+proto ${VPN_TRAFFIC_PROTOCOL}
 # Rely on Docker to do port mapping, internally always 1194
-port 1194
+port ${VPN_PORT}
 dev ${OVPN_DEVICE}${OVPN_DEVICEN}
 status /tmp/openvpn-status.log
 
@@ -162,36 +145,10 @@ OVPN_FRAGMENT=''
 OVPN_KEEPALIVE="10 60"
 OVPN_MTU=''
 OVPN_NAT=0
-OVPN_PORT=1194
-OVPN_PROTO="udp"
 OVPN_PUSH=()
 OVPN_SERVER=10.8.0.0/24
 OVPN_SERVER_URL=''
 OVPN_TLS_CIPHER=''
-
-# Parse arguments
-while getopts ":d:p:t" opt; do
-  case ${opt} in
-    p)
-      OVPN_PORT="${OPTARG}"
-      ;;
-    t)
-      OVPN_PROTO="${OPTARG}"
-      ;;
-    \?)
-      set +x
-      echo "Invalid option: -${OPTARG}" >&2
-      usage
-      exit 1
-      ;;
-    :)
-      set +x
-      echo "Option -${OPTARG} requires an argument." >&2
-      usage
-      exit 1
-      ;;
-  esac
-done
 
 configuration_file="${OPENVPN}/openvpn.conf"
 

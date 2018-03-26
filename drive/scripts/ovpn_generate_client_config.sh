@@ -10,7 +10,7 @@ client
 nobind
 dev ${OVPN_DEVICE}
 remote-cert-tls server # Ensure that the host being connected to is a server
-remote ${OVPN_CN} ${OVPN_PORT} ${OVPN_PROTO}
+remote ${OVPN_CN} ${VPN_PORT} ${VPN_TRAFFIC_PROTOCOL}
 ncp-ciphers AES-256-GCM:AES-128-GCM:AES-256-CBC # Allowed ciphers for data channel encryption
 auth SHA256 # Algorithm for HMAC-authenticating data and control channel packets
 EOF
@@ -34,7 +34,7 @@ EOF
 }
 
 copy_client_config_to_s3() {
-  aws s3 cp "${configuration_file}" s3://shard-vpn-keys/client.ovpn
+  aws s3 cp "${configuration_file}" s3://shard-vpn-keys/${CLIENTNAME}.ovpn
 }
 
 # Enable debug mode if ENV variable DEBUG == 1

@@ -25,20 +25,15 @@ resource "aws_ecs_task_definition" "shard_vpn_drive_task" {
 [
   {
     "name": "shard-vpn-drive-1",
-    "image": "jerridan/shard-vpn-drive:1.0.1",
+    "image": "jerridan/shard-vpn-drive:test",
     "memory": 256,
     "cpu": 256,
     "privileged": true,
     "portMappings": [
       {
-        "containerPort": 443,
-        "hostPort": 443,
-        "protocol": "tcp"
-      },
-      {
-        "containerPort": 1194,
-        "hostPort": 1194,
-        "protocol": "udp"
+        "containerPort": ${lookup(var.port_numbers, var.traffic_protocol)},
+        "hostPort": ${lookup(var.port_numbers, var.traffic_protocol)},
+        "protocol": "${var.traffic_protocol}"
       }
     ],
     "logConfiguration": {
@@ -53,6 +48,14 @@ resource "aws_ecs_task_definition" "shard_vpn_drive_task" {
       {
         "name": "SERVER_DOMAIN",
         "value": "${aws_instance.shard_vpn_drive_host.public_ip}"
+      },
+      {
+        "name": "VPN_TRAFFIC_PROTOCOL",
+        "value": "${var.traffic_protocol}"
+      },
+      {
+        "name": "VPN_PORT",
+        "value": "${lookup(var.port_numbers, var.traffic_protocol)}"
       }
     ]
   }

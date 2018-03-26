@@ -84,9 +84,9 @@ Once you have all of the dependencies set up, you can run ShardVPN as follows:
 1. Once the script has finished running, go to the S3 service in your AWS account.
 1. In the 'shard-vpn-keys' bucket, you will see a number of files. Once your VPN server has initialized, a file with 
 the 
-name `client.ovpn` will appear. This takes ~3 minutes. 
-1. Download the `client.ovpn` file.
-1. Use the `client.ovpn` file with your favourite OpenVPN-compatible VPN software to establish a connection with the 
+name `shard-vpn-client.ovpn` will appear. This takes ~3 minutes. 
+1. Download the `shard-vpn-client.ovpn` file.
+1. Use the `shard-vpn-client.ovpn` file with your favourite OpenVPN-compatible VPN software to establish a connection with the 
 server.
     - If you are using macOS, I recommend [Tunnelblick](https://tunnelblick.net/)
 1. Presto! You should now be connected to your own private VPN server!
@@ -103,6 +103,9 @@ necessary keys and certificates required for a client - server VPN connection.
 If you wish, you may run these commands manually to achieve the same result. You can even SSH into the servers yourself 
 using the RSA key you 
 generated, if you want to have a look around.
+
+### Settings
+In the root folder, there is a `settings.tfvars` file where user settings may be defined.
 
 ### Stopping ShardVPN
 1. If you started ShardVPN using the `build_vpn_from_scratch.sh` script, then run `destroy_drive.sh` from the main folder.
