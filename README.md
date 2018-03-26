@@ -104,6 +104,9 @@ If you wish, you may run these commands manually to achieve the same result. You
 using the RSA key you 
 generated, if you want to have a look around.
 
+### Settings
+In the root folder, there is a `settings.tfvars` file where user settings may be defined.
+
 ### Stopping ShardVPN
 1. If you started ShardVPN using the `build_vpn_from_scratch.sh` script, then run `destroy_drive.sh` from the main folder.
 
