@@ -48,7 +48,7 @@ usage() {
 
 generate_full_server_url() {
   if [[ -n "${OVPN_CN:-}" ]]; then
-    OVPN_SERVER_URL="${OVPN_PROTO}://${OVPN_CN}:${OVPN_PORT}"
+    OVPN_SERVER_URL="${VPN_TRAFFIC_PROTOCOL}://${OVPN_CN}:${VPN_PORT}"
   else
     set +x
     echo "Domain name not specified, see '-d'"
@@ -88,9 +88,9 @@ keepalive ${OVPN_KEEPALIVE}
 persist-key
 persist-tun
 
-proto ${OVPN_PROTO}
+proto ${VPN_TRAFFIC_PROTOCOL}
 # Rely on Docker to do port mapping, internally always 1194
-port 1194
+port ${VPN_PORT}
 dev ${OVPN_DEVICE}${OVPN_DEVICEN}
 status /tmp/openvpn-status.log
 
@@ -162,8 +162,6 @@ OVPN_FRAGMENT=''
 OVPN_KEEPALIVE="10 60"
 OVPN_MTU=''
 OVPN_NAT=0
-OVPN_PORT=1194
-OVPN_PROTO="udp"
 OVPN_PUSH=()
 OVPN_SERVER=10.8.0.0/24
 OVPN_SERVER_URL=''
@@ -173,10 +171,10 @@ OVPN_TLS_CIPHER=''
 while getopts ":d:p:t" opt; do
   case ${opt} in
     p)
-      OVPN_PORT="${OPTARG}"
+      VPN_PORT="${OPTARG}"
       ;;
     t)
-      OVPN_PROTO="${OPTARG}"
+      VPN_TRAFFIC_PROTOCOL="${OPTARG}"
       ;;
     \?)
       set +x
