@@ -7,11 +7,11 @@ It is still under development, and may change drastically over time.
 
 ShardVPN is named for the Shards in Brandon Sanderson's series _The Stormlight Archive_.
 > Ten heartbeats.
-<br/>
-_One_.
-<br/>
-That was how long it took to summon a Shardblade. If Dalinar's heart was racing, the time was shorter. If he was 
-relaxed, it took longer. _Two_.
+> <br/>
+> _One_.
+> <br/>
+> That was how long it took to summon a Shardblade. If Dalinar's heart was racing, the time was shorter. If he was 
+> relaxed, it took longer. _Two_.
 
 \- _The Way of Kings_ by Brandon Sanderson, p. 202.
 
