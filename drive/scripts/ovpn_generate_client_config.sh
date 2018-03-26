@@ -34,7 +34,7 @@ EOF
 }
 
 copy_client_config_to_s3() {
-  aws s3 cp "${configuration_file}" s3://shard-vpn-keys/client.ovpn
+  aws s3 cp "${configuration_file}" s3://shard-vpn-keys/${CLIENTNAME}.ovpn
 }
 
 # Enable debug mode if ENV variable DEBUG == 1
