@@ -37,26 +37,9 @@ getroute() {
   echo ${1%/*} $(cidr2mask $1)
 }
 
-usage() {
-  echo "Usage of ovpn_genconfig:"
-  echo " -d Server public domain (ex. vpn.example.com)"
-  echo
-  echo "optional arguments:"
-  echo " -p Server port. Default: 1194"
-  echo " -t Server VPN protocol. Default: 'udp'"
-}
-
 generate_full_server_url() {
-  if [[ -n "${OVPN_CN:-}" ]]; then
-    OVPN_SERVER_URL="${VPN_TRAFFIC_PROTOCOL}://${OVPN_CN}:${VPN_PORT}"
-  else
-    set +x
-    echo "Domain name not specified, see '-d'"
-    usage
-    exit 1
-  fi
+  OVPN_SERVER_URL="${VPN_TRAFFIC_PROTOCOL}://${OVPN_CN}:${VPN_PORT}"
 }
-
 remove_old_ovpn_vars() {
   if [[ -f "${OVPN_ENV}" ]]; then
     rm "${OVPN_ENV}"
@@ -166,30 +149,6 @@ OVPN_PUSH=()
 OVPN_SERVER=10.8.0.0/24
 OVPN_SERVER_URL=''
 OVPN_TLS_CIPHER=''
-
-# Parse arguments
-while getopts ":d:p:t" opt; do
-  case ${opt} in
-    p)
-      VPN_PORT="${OPTARG}"
-      ;;
-    t)
-      VPN_TRAFFIC_PROTOCOL="${OPTARG}"
-      ;;
-    \?)
-      set +x
-      echo "Invalid option: -${OPTARG}" >&2
-      usage
-      exit 1
-      ;;
-    :)
-      set +x
-      echo "Option -${OPTARG} requires an argument." >&2
-      usage
-      exit 1
-      ;;
-  esac
-done
 
 configuration_file="${OPENVPN}/openvpn.conf"
 
