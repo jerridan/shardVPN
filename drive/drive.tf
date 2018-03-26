@@ -31,8 +31,8 @@ resource "aws_ecs_task_definition" "shard_vpn_drive_task" {
     "privileged": true,
     "portMappings": [
       {
-        "containerPort": "${lookup(var.port_numbers, var.traffic_protocol)}",
-        "hostPort": "${lookup(var.port_numbers, var.traffic_protocol)}",
+        "containerPort": ${lookup(var.port_numbers, var.traffic_protocol)},
+        "hostPort": ${lookup(var.port_numbers, var.traffic_protocol)},
         "protocol": "${var.traffic_protocol}"
       }
     ],

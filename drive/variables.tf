@@ -1,6 +1,4 @@
-variable "traffic_protocol" {
-  default = "udp"
-}
+variable "traffic_protocol" {}
 
 variable "port_numbers" {
   type = "map"
