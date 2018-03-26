@@ -1,1 +1,1 @@
-traffic_protocol = "tcp"
+traffic_protocol = "udp"
