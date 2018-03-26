@@ -8,4 +8,4 @@ bash ${PROJECT_DIR}/generate_keys.sh
 bash ${PROJECT_DIR}/activate_drive.sh
 bash ${PROJECT_DIR}/destroy_certifier_resources.sh
 
-echo "BlinkVPN created successfully"
+echo "ShardVPN created successfully"

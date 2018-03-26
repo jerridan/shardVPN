@@ -9,12 +9,12 @@ RUN apk add --no-cache --update bash easy-rsa openvpn && \
 ENV OPENVPN /etc/openvpn
 ENV EASYRSA /usr/share/easy-rsa
 ENV EASYRSA_PKI $OPENVPN/pki
-ENV BLINK_KEYS /etc/blinkvpn
+ENV SHARD_VPN_KEYS /etc/shardvpn
 ENV DOWNLOADS /etc/downloads
-ENV CLIENTNAME "blink-client"
-ENV SERVERNAME "blink-drive"
+ENV CLIENTNAME "shard-vpn-client"
+ENV SERVERNAME "shard-vpn-drive"
 
-RUN ["mkdir", "/etc/blinkvpn"]
+RUN ["mkdir", "/etc/shardvpn"]
 RUN ["mkdir", "/etc/downloads"]
 
 ADD scripts "/usr/local/bin"

@@ -2,15 +2,15 @@ provider "aws" {
   region = "ca-central-1"
 }
 
-resource "aws_instance" "blink_certifier" {
+resource "aws_instance" "shard_vpn_certifier" {
   ami = "ami-03de5b67"
   instance_type = "t2.micro"
-  key_name = "blink_certifier_key_pair"
+  key_name = "shard_vpn_certifier_key_pair"
   depends_on = ["aws_security_group.certifier_security_group"]
   security_groups = ["certifier_security_group"]
-  iam_instance_profile = "${aws_iam_instance_profile.blink_certifier_iam_profile.name}"
+  iam_instance_profile = "${aws_iam_instance_profile.shard_vpn_certifier_iam_profile.name}"
   tags {
-    Name = "BlinkCertifier"
+    Name = "ShardVPNCertifier"
   }
   connection = {
     type = "ssh"
@@ -23,8 +23,8 @@ resource "aws_instance" "blink_certifier" {
   }
 }
 
-resource "aws_key_pair" "blink_certifier_key_pair" {
-  key_name = "blink_certifier_key_pair"
+resource "aws_key_pair" "shard_vpn_certifier_key_pair" {
+  key_name = "shard_vpn_certifier_key_pair"
   public_key = "${file("~/.ssh/terraform_rsa.pub")}"
 }
 
@@ -58,13 +58,13 @@ resource "aws_security_group" "certifier_security_group" {
   }
 }
 
-resource "aws_iam_instance_profile" "blink_certifier_iam_profile" {
-  name = "blink_certifier_iam_profile"
-  role = "${aws_iam_role.blink_certifier_role.name}"
+resource "aws_iam_instance_profile" "shard_vpn_certifier_iam_profile" {
+  name = "shard_vpn_certifier_iam_profile"
+  role = "${aws_iam_role.shard_vpn_certifier_role.name}"
 }
 
-resource "aws_iam_role" "blink_certifier_role" {
-  name = "blink_certifier_role"
+resource "aws_iam_role" "shard_vpn_certifier_role" {
+  name = "shard_vpn_certifier_role"
   assume_role_policy = <<EOF
 {
   "Version": "2012-10-17",
@@ -82,9 +82,9 @@ resource "aws_iam_role" "blink_certifier_role" {
 EOF
 }
 
-resource "aws_iam_role_policy" "blink_certifier_policy" {
-  name = "blink_certifier_policy"
-  role = "${aws_iam_role.blink_certifier_role.id}"
+resource "aws_iam_role_policy" "shard_vpn_certifier_policy" {
+  name = "shard_vpn_certifier_policy"
+  role = "${aws_iam_role.shard_vpn_certifier_role.id}"
   policy = <<EOF
 {
   "Version": "2012-10-17",

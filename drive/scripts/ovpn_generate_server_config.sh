@@ -79,11 +79,11 @@ save_ovpn_config() {
 cat > "${configuration_file}" <<EOF
 server $(getroute "${OVPN_SERVER}")
 verb 3
-key ${BLINK_VOLUME}/${SERVERNAME}.key
-ca ${BLINK_VOLUME}/ca.crt
-cert ${BLINK_VOLUME}/${SERVERNAME}.crt
-dh ${BLINK_VOLUME}/dh.pem
-tls-crypt ${BLINK_VOLUME}/ta.key
+key ${SHARD_VPN_VOLUME}/${SERVERNAME}.key
+ca ${SHARD_VPN_VOLUME}/ca.crt
+cert ${SHARD_VPN_VOLUME}/${SERVERNAME}.crt
+dh ${SHARD_VPN_VOLUME}/dh.pem
+tls-crypt ${SHARD_VPN_VOLUME}/ta.key
 keepalive ${OVPN_KEEPALIVE}
 persist-key
 persist-tun
@@ -127,23 +127,23 @@ if [[ ${DEBUG:-} == "1" ]]; then
   set -x
 fi
 
-if [[ ! -f "${BLINK_VOLUME}/${SERVERNAME}.key" ]]; then
-  echo "Server key at ${BLINK_VOLUME}/${SERVERNAME}.key not found"
+if [[ ! -f "${SHARD_VPN_VOLUME}/${SERVERNAME}.key" ]]; then
+  echo "Server key at ${SHARD_VPN_VOLUME}/${SERVERNAME}.key not found"
   exit 1
 fi
 
-if [[ ! -f "${BLINK_VOLUME}/${SERVERNAME}.crt" ]]; then
-  echo "Server certificate at ${BLINK_VOLUME}/${SERVERNAME}.crt not found"
+if [[ ! -f "${SHARD_VPN_VOLUME}/${SERVERNAME}.crt" ]]; then
+  echo "Server certificate at ${SHARD_VPN_VOLUME}/${SERVERNAME}.crt not found"
   exit 1
 fi
 
-if [[ ! -f "${BLINK_VOLUME}/ca.crt" ]]; then
-  echo "Certificate authority at ${BLINK_VOLUME}/ca.crt not found"
+if [[ ! -f "${SHARD_VPN_VOLUME}/ca.crt" ]]; then
+  echo "Certificate authority at ${SHARD_VPN_VOLUME}/ca.crt not found"
   exit 1
 fi
 
-if [[ ! -f "${BLINK_VOLUME}/ta.key" ]]; then
-  echo "HMAC key at ${BLINK_VOLUME}/ta.key not found"
+if [[ ! -f "${SHARD_VPN_VOLUME}/ta.key" ]]; then
+  echo "HMAC key at ${SHARD_VPN_VOLUME}/ta.key not found"
   exit 1
 fi
 

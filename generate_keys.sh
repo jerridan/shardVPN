@@ -12,4 +12,4 @@ terraform apply -auto-approve
 cd ${PROJECT_DIR}/certifier
 terraform apply -auto-approve
 
-echo "BlinkVPN keys successfully generated"
+echo "ShardVPN keys successfully generated"
