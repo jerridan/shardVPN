@@ -105,8 +105,7 @@ This script does the following:
 If you wish, you may run these commands manually to achieve the same result.
 
 ## Security
-ShardVPN is built for the purpose of keeping the user safe and secure. Below are some of the notable ways that it 
-does this.
+Below are some of the security measures that ShardVPN is built with.
 
 **Separation of the Certificate Authority from the VPN server**
 
