@@ -5,6 +5,16 @@ then promptly destroy it.
 ShardVPN has only been tested on macOS, and may or may not work as expected with other operating systems.
 It is still under development, and may change drastically over time.
 
+ShardVPN is named for the Shards in Brandon Sanderson's series _The Stormlight Archive_.
+> Ten heartbeats.
+<br/>
+_One_.
+<br/>
+That was how long it took to summon a Shardblade. If Dalinar's heart was racing, the time was shorter. If he was 
+relaxed, it took longer. _Two_.
+
+\- _The Way of Kings_ by Brandon Sanderson, p. 202.
+
 ## Contents
 - [Dependencies](#dependencies)
   - [Setting up AWS Credentials](#setting-up-aws-credentials)
