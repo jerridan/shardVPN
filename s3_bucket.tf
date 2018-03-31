@@ -1,5 +1,6 @@
 provider "aws" {
   region = "ca-central-1"
+  profile = "${var.aws_credentials_profile}"
 }
 
 resource "aws_s3_bucket" "shard_vpn_keys" {

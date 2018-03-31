@@ -1,3 +1,5 @@
+variable "aws_credentials_profile" {}
+
 variable "traffic_protocol" {
   default = "udp"
 }
