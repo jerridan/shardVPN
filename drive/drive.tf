@@ -1,7 +1,3 @@
-provider "aws" {
-  region = "ca-central-1"
-}
-
 resource "aws_cloudwatch_log_group" "shard_vpn_drive_log_group" {
   name = "shard-vpn-drive-log-group"
   retention_in_days = 1

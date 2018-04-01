@@ -1,7 +1,3 @@
-provider "aws" {
-  region = "ca-central-1"
-}
-
 resource "aws_instance" "shard_vpn_certifier" {
   ami = "ami-03de5b67"
   instance_type = "t2.micro"
