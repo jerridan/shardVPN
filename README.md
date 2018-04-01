@@ -110,6 +110,12 @@ generated, if you want to have a look around.
 
 ### Settings
 In the root folder, there is a `settings.tfvars` file where user settings may be defined.
+At this point, the following settings may be defined:
+- `aws_credentials_profile`
+  - The profile in your aws credentials file that ShardVPN should use
+- `traffic_protocol`
+  - The protocol (udp or tcp) that you want ShardVPN to use. Default: udp
+  - UDP protocol will use port 1194, while TCP will use port 443
 
 ### Stopping ShardVPN
 1. If you started ShardVPN using the `build_vpn_from_scratch.sh` script, then run `destroy_drive.sh` from the main folder.
