@@ -44,7 +44,7 @@ ShardVPN uses Terraform to create, set up, and tear down the necessary AWS resou
  - CloudWatchLogsFullAccess
  - AmazonEC2ContainerServiceFullAccess
  
-In the end, your default AWS credentials on your local system must have the above permissions. I recommend setting up
+In the end, your local AWS credentials file must grant ShardVPN the above permissions. I recommend setting up
   these permissions in the following manner:
   1. Go to the IAM service in your AWS account.
   1. Create a user. You may name it whatever you like.
@@ -53,12 +53,16 @@ In the end, your default AWS credentials on your local system must have the abov
   1. Assign the user to the group.
   1. In the group, attach the permission policies listed above.
   1. In the user, go to the 'Security Credentials' page and create an access key.
-  1. With the access key ID and the secret key, create a file at `~/.aws/credentials` that looks like the following:
+  1. Open your local AWS credentials file at `~/.aws/credentials`. If you do not yet have this file, create it. You can
+  learn more about this [here](https://docs.aws.amazon.com/cli/latest/userguide/cli-config-files.html).
+  1. Include the credentials you created under a profile for ShardVPN, like so: 
       ```
-      [default]
+      [shard_vpn]
       aws_access_key_id = YOUR_AWS_ACCESS_KEY_ID
       aws_secret_access_key = YOUR_AWS_SECRET_ACCESS_KEY
       ```
+      Note: If you want to name the profile something else, you can - but you must change the `aws_credentials_profile` variable
+      in `settings.tfvars`, in the main repository folder. 
 
 ### Installing Terraform
 On macOS, I find using Homebrew to be the easiest way to install Terraform: 
