@@ -84,6 +84,7 @@ to be helpful.
 ### Running ShardVPN
 Once you have all of the dependencies set up, you can run ShardVPN as follows:
 1. Navigate to the main ShardVPN folder.
+1. If you are running ShardVPN for the first time, run `initialize_terraform.sh`.
 1. Run `build_vpn_from_scratch.sh`.
 1. Once the script has finished running, go to the S3 service in your AWS account.
 1. In the 'shard-vpn-keys' bucket, you will see a number of files. Once your VPN server has initialized, a file with 
