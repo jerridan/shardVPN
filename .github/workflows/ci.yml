@@ -18,5 +18,10 @@ jobs:
           python-version: '3.13'
       - run: pip install pytest boto3 ruff
       - run: ruff check .
-      - run: ruff format --check .
+      # ruff format's default file discovery includes *.md and reformats
+      # Python code fences within. docs/superpowers/plans/2026-08-01-shardvpn-v2.md
+      # is the design plan, not project source, and isn't ours to reformat here.
+      # Scoped to this invocation only (--extend-exclude, not pyproject.toml)
+      # so `ruff check` above keeps full, unmodified file discovery.
+      - run: ruff format --check . --extend-exclude docs/superpowers/plans/2026-08-01-shardvpn-v2.md
       - run: pytest -v

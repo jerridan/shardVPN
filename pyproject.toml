@@ -10,10 +10,6 @@ pythonpath = ["lambda"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-# ruff's default `include` covers *.md for docstring/code-fence formatting.
-# docs/ holds the design spec and plan (untouched, not part of the project
-# source) and must not be reformatted by this task's tooling.
-extend-exclude = ["docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "S"]
