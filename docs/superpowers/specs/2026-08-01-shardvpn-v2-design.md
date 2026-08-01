@@ -264,8 +264,14 @@ is spent before it is realistically readable.
 
 ### 7.1 Credential scope
 
-An OAuth client with **`auth_keys` scope only**, restricted to
+An OAuth client with **`auth_keys` + `devices:core:read`**, restricted to
 `tag:shardvpn-exit`. Client ID and secret live in SSM as SecureStrings.
+
+`devices:core:read` is required for the `tailnet` field of `status` (§5.2) —
+without it there is no way to tell "booted but never joined the tailnet" from
+"still booting". It is strictly read-only: a leaked secret could enumerate
+devices but could not remove, authorize, or retag any of them. The read-only
+variant is confirmed to exist alongside the read-write `devices:core`.
 
 The Lambda exchanges them at `POST /api/v2/oauth/token` (form-encoded
 `client_id`, `client_secret`), then mints a key at
@@ -291,14 +297,16 @@ The Lambda exchanges them at `POST /api/v2/oauth/token` (form-encoded
 The `-` tailnet alias is used deliberately so the tailnet name never appears in
 a public repo.
 
-### 7.2 Why `devices:core` is not granted
+### 7.2 Why read-write `devices:core` is not granted
 
 Tag restrictions genuinely constrain `auth_keys`, but tag-scoping for device
 *operations* is an open feature request
 ([tailscale/tailscale#10702](https://github.com/tailscale/tailscale/issues/10702)) —
-`devices:core` is tailnet-wide: read and write every device, remove machines,
-manipulate tags. Granting it so the Lambda could delete one exit node would
-mean a leaked OAuth secret could remove any device from the tailnet.
+read-write `devices:core` is therefore tailnet-wide: it can remove machines and
+manipulate tags on every device, not just ours. Granting it so the Lambda could
+delete one exit node would mean a leaked OAuth secret could remove any device
+from the tailnet. The read-only `devices:core:read` carries no such risk, which
+is why the split matters.
 
 Instead the node removes itself: the shutdown-ordered unit from §6.2 runs
 `tailscale logout` on termination, which removes an ephemeral node immediately.
@@ -311,7 +319,8 @@ permission at all.
 
 Documented in `docs/tailnet-setup.md`, done once by hand:
 
-- Create the OAuth client with `auth_keys` scope and tag `tag:shardvpn-exit`.
+- Create the OAuth client with scopes `auth_keys` and `devices:core:read`, and
+  tag `tag:shardvpn-exit`.
 - Define `tag:shardvpn-exit` in the policy file with an appropriate owner.
 - Add `"autoApprovers": {"exitNode": ["tag:shardvpn-exit"]}` so exit nodes are
   approved without opening the admin console mid-trip.
