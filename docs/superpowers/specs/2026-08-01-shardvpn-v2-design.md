@@ -67,14 +67,22 @@ terraform/
   scheduler.tf         aws_scheduler_schedule
   sns.tf               topic + email subscription
   ssm.tf               parameters (placeholder values)
+  alarms.tf            Lambda error/throttle alarms, budget
   variables.tf outputs.tf
   terraform.tfvars.example
 lambda/
-  handler.py           auth, event routing, response shaping
-  ec2.py               find / launch / terminate / security group
-  tailscale.py         OAuth token, mint auth key
-  watchdog.py          scheduled sweep
-  userdata.sh          cloud-init (plain shell, string.Template placeholders)
+  shardvpn/            a package, not loose modules — see below
+    __init__.py
+    auth.py            HMAC verification (pure)
+    ttl.py             TTL parsing and expiry (pure)
+    statusdoc.py       the response document (pure)
+    render.py          userdata rendering (pure)
+    settings.py        SSM parameters and the current-node pointer
+    tailscale.py       OAuth token, mint auth key, device lookup
+    ec2ops.py          find / launch / terminate / security group
+    watchdog.py        scheduled sweep
+    handler.py         auth gate, event routing, action dispatch
+    userdata.sh        cloud-init (plain shell, string.Template placeholders)
 tests/                 pytest, fully offline
 docs/
   tailnet-setup.md     one-time: OAuth client, tag, autoApprovers ACL
@@ -87,12 +95,30 @@ CLAUDE.md  README.md  .gitignore  .trivyignore
 Single Terraform root module. The v1 `certifier/` + `drive/` split existed to
 sequence two applies; there is no longer a sequence.
 
+The Lambda code is a **package** rather than loose modules at the zip root.
+Flat modules named `config`, `status` and `render` sit on `sys.path` ahead of
+anything the runtime imports, which is a known shadowing footgun; a package
+directory costs nothing and removes the class of problem. The handler is
+`shardvpn.handler.lambda_handler`. `settings.py` and `statusdoc.py` are named
+to avoid colliding with common module names even inside the package.
+
 ## 5. Control plane
 
 ### 5.1 Request format
 
 Lambda Function URL, `authorization_type = "NONE"`. Authentication is entirely
 in the handler.
+
+**`NONE` still requires a resource-based policy.** Since October 2025 function
+URLs need *both* `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction`, and
+only the console and SAM create that policy for you — via Terraform you must
+add it yourself or every request returns `403` from the Lambda service,
+indistinguishable from a signature mismatch. Two `aws_lambda_permission`
+resources are required: one for `lambda:InvokeFunctionUrl` with
+`function_url_auth_type = "NONE"`, and one for `lambda:InvokeFunction` with
+`invoked_via_function_url = true` so the public grant cannot be used to invoke
+the function by any other route. That argument landed in AWS provider
+**v6.28.0**, inside our `~> 6.57` constraint.
 
 ```
 POST / HTTP/1.1
@@ -107,18 +133,33 @@ X-ShardVPN-Signature: <hex sha256>
 
 Verification order, strictly, before any AWS call or JSON parse:
 
-1. Both headers present, timestamp parses as an integer.
-2. `abs(now - timestamp) <= 120` seconds.
-3. Recompute HMAC over the **raw body bytes exactly as received**.
+1. Both headers present.
+2. Timestamp matches `^\d{1,11}$` **before** `int()`. Python's `int()` accepts
+   surrounding whitespace, a leading `+`, underscore separators and non-ASCII
+   digits; each would make client and server disagree about the canonical
+   signed message for the same header.
+3. Signature matches `^[0-9a-f]{64}$`. Without this check
+   `hmac.compare_digest` raises `TypeError` on a non-ASCII header value,
+   producing a `502` where every other bad request produces `403` — exactly
+   the oracle this section forbids.
+4. `abs(now - timestamp) <= 120` seconds.
+5. Recompute HMAC over the **raw body bytes exactly as received**.
    Function URLs deliver `event["body"]` base64-encoded when
    `isBase64Encoded` is true — decode to original bytes and sign those.
-   Never sign re-serialized JSON; key order would differ.
-4. `hmac.compare_digest`.
+   Never sign re-serialized JSON; key order would differ. A malformed base64
+   body raises `binascii.Error`, which must be caught and converted to the
+   same failure as any other.
+6. `hmac.compare_digest`.
 
 Failure at any step returns an identical `403` with the same body — no oracle
-distinguishing a missing header from a bad signature. Doing this before any
-AWS call also caps denial-of-wallet from someone holding the URL but not the
-secret.
+distinguishing a missing header from a bad signature, and no input that
+produces a `5xx` instead of a `403`.
+
+**The signing secret is cached in a module-level global with a 300-second
+TTL.** Without it, every unauthenticated request costs an `ssm:GetParameter`
+plus a `kms:Decrypt` before the signature is even checked, which contradicts
+the denial-of-wallet claim this design makes. The TTL bounds how long a
+rotated secret takes to take effect; §10 documents that.
 
 **Accepted residual risk:** replay is possible within the 120-second window.
 Not mitigated with a nonce store, because all actions are idempotent — a
@@ -135,6 +176,12 @@ project whose premise is having nothing running.
 {"action":"down"}                      terminate + leave tailnet
 {"action":"status"}                    report
 ```
+
+`region` is validated against `DescribeRegions` before use and rejected with a
+`400` listing valid values. It is otherwise interpolated straight into a
+`boto3.client` call, the Tailscale hostname and the EC2 `Name` tag —
+unvalidated, garbage yields a DNS failure and an opaque `502`, and a region
+the account has not opted into yields an equally opaque `AuthFailure`.
 
 All three actions return the same document:
 
@@ -155,9 +202,14 @@ All three actions return the same document:
 `state` is one of `absent`, `pending`, `running`, `shutting-down`.
 `tailnet` is `online`, `absent`, or `unknown`.
 `expires_at` is `null` when the `shardvpn:expires-at` tag is `never`.
-`idle_for` is derived from the same CloudWatch `NetworkOut` query the watchdog
-uses (§8.2), so `status` makes one `GetMetricStatistics` call; it is `null`
-when `state` is not `running`.
+
+`idle_for` is the time since the most recent `NetworkOut` datapoint above
+zero, from the same `GetMetricStatistics` query the watchdog uses (§8.2). It
+is `null` when `state` is not `running`, and **also `null` when the node is
+younger than 15 minutes** — EC2 basic monitoring publishes on a 5-minute
+period and lags several minutes behind, so a freshly launched node would
+otherwise report itself as maximally idle on the one screen you are staring
+at in an airport.
 
 **`status` queries Tailscale as well as EC2.** `state: running` with
 `tailnet: absent` means the instance booted but cloud-init failed to join the
@@ -175,6 +227,14 @@ region. Instead:
   and is authoritative for the Function URL path. `up` reads it first and
   returns the existing node rather than launching. `down` and `status` use it
   to locate the node without the caller passing a region.
+- **`up` fails closed on an unreadable pointer.** `ParameterNotFound` means
+  "no node, safe to launch"; any other error returns `503` rather than
+  launching. Treating a transient SSM error as "no node" would turn a blip
+  into a second instance, and reserved concurrency serialises requests without
+  making them idempotent.
+- **A regional `DescribeInstances` runs immediately before `RunInstances`.**
+  This does not close the global window — the scan is regional — but it
+  eliminates the overwhelmingly common double-tap-in-the-same-region case.
 - **Reserved concurrency = 1** on the Lambda, so two simultaneous requests
   cannot both read "no node" and both launch.
 - `RunInstances` is called with a `ClientToken` so an AWS-side retry cannot
@@ -182,6 +242,17 @@ region. Instead:
 
 The pointer can drift if the Lambda dies between `RunInstances` and the SSM
 write. Reconciling that is the watchdog's job, which scans all regions anyway.
+
+**Duplicates are terminated, not merely reported.** If the sweep finds more
+than one live node it keeps the newest by `shardvpn:launched-at` and
+terminates the rest, and `down` terminates every live node rather than the
+first one it happens to see. Reconciling the *pointer* without reconciling
+*reality* would leave a duplicate running at $0.52/day until a human read an
+email — and with TTL defaulting to `none`, forever if they did not.
+
+Reserved concurrency 1 means a running sweep makes the Function URL return
+`429`. The sweep is parallelised (§8.2) to keep that window to seconds, and
+the phone client retries with backoff on `429` and `5xx`.
 
 ### 5.4 Event routing
 
@@ -205,8 +276,22 @@ Default VPC, default subnet, so no region needs pre-provisioning.
 ### 6.1 Security group
 
 The Lambda ensures a dedicated `shardvpn-exit` security group exists in the
-target region — `DescribeSecurityGroups` by name, `CreateSecurityGroup` if
-absent — with **zero ingress rules** and all egress allowed.
+target region — `DescribeSecurityGroups` filtered by name **and by the default
+VPC's id**, `CreateSecurityGroup` if absent — with **zero ingress rules** and
+all egress allowed.
+
+Two details that are easy to get wrong:
+
+- The lookup must filter on `vpc-id`, resolved via `DescribeVpcs` with
+  `isDefault=true`. Group names are unique per VPC, not per region, so an
+  unfiltered lookup can return a group in a non-default VPC and
+  `RunInstances` then fails with `InvalidParameterValue: Security group does
+  not belong to VPC`.
+- **`CreateSecurityGroup` already attaches an allow-all egress rule.** Calling
+  `AuthorizeSecurityGroupEgress` with the same rule afterwards returns
+  `InvalidPermission.Duplicate` and fails every first launch in a region. The
+  egress intent is recorded in the group description and a comment, not by
+  re-adding a rule AWS created.
 
 The default VPC's default SG would be nearly equivalent (its only ingress is
 from other members of itself, and our instance would be the sole member), but a
@@ -232,15 +317,28 @@ Order matters and *is* the design:
    `networkd-dispatcher` hook, which is Ubuntu-only — AL2023 has no
    `networkd-dispatcher`.** Copying their snippet would silently leave the node
    with no GRO tuning.
-3. Install `tailscale` from the AL2023 repo; `systemctl enable --now tailscaled`.
-4. Install a systemd unit ordered against `shutdown.target` whose `ExecStop`
-   runs `tailscale logout`, so the node removes itself from the tailnet on
-   termination (see §7.2).
+3. `dnf install -y dnf-plugins-core ethtool`, **then** add the Tailscale repo
+   and install it. `dnf config-manager` lives in `dnf-plugins-core`, which is
+   not reliably present on the base AL2023 AMI. Under `set -euo pipefail` a
+   missing `config-manager` aborts the script *after* the GRO unit is
+   installed and *before* Tailscale is — leaving a running, billed instance
+   that never joins the tailnet.
+4. Install a `Type=oneshot` + `RemainAfterExit=yes` unit whose `ExecStop` runs
+   `tailscale logout`, so the node removes itself from the tailnet on
+   termination (see §7.2). It is ordered `After=tailscaled.service` and
+   `After=network-online.target` so it stops *before* both — a unit with no
+   network ordering can be stopped after networking is torn down, at which
+   point `tailscale logout` cannot reach the coordination server. It sets
+   `TimeoutStopSec=20` so a hung logout cannot consume EC2's finite
+   termination grace.
 5. `tailscale up --auth-key=${TS_AUTHKEY} --advertise-exit-node --ssh
    --hostname=${TS_HOSTNAME}`.
-6. Assert `/proc/sys/net/ipv4/ip_forward` reads `1` and `tailscale status
-   --json` shows a self node advertising the exit-node capability. Log loudly
-   on failure.
+6. Assert `/proc/sys/net/ipv4/ip_forward` reads `1`, and that `tailscale
+   status --json` shows the node advertising as an exit node — **in a bounded
+   retry loop**. `tailscale up` returns once authenticated, but the netmap may
+   not yet reflect the advertisement, so a single-shot check would turn a
+   healthy node into a fatal error and become the silent failure it exists to
+   catch. Log loudly on genuine failure.
 
 ### 6.3 Auth key handling
 
@@ -297,6 +395,15 @@ The Lambda exchanges them at `POST /api/v2/oauth/token` (form-encoded
 The `-` tailnet alias is used deliberately so the tailnet name never appears in
 a public repo.
 
+**Device lookup matches on the `tags` array, not on `hostname`.** The device
+object carries both `name` (a MagicDNS FQDN) and `hostname` (the machine's
+reported hostname), and whether `tailscale up --hostname=X` surfaces verbatim
+as `hostname` is not something to bet on — if it is sanitised or differs, an
+exact-string match returns `None` forever and `status` reports `tailnet:
+absent` for a perfectly healthy node. Membership of `tag:shardvpn-exit` is
+guaranteed by the auth key we minted. Hostname is used only to disambiguate
+when more than one tagged device is present.
+
 ### 7.2 Why read-write `devices:core` is not granted
 
 Tag restrictions genuinely constrain `auth_keys`, but tag-scoping for device
@@ -324,6 +431,10 @@ Documented in `docs/tailnet-setup.md`, done once by hand:
 - Define `tag:shardvpn-exit` in the policy file with an appropriate owner.
 - Add `"autoApprovers": {"exitNode": ["tag:shardvpn-exit"]}` so exit nodes are
   approved without opening the admin console mid-trip.
+- Add an `ssh` stanza granting access to `tag:shardvpn-exit`. `tailscale up
+  --ssh` does nothing without one, and reading
+  `/var/log/shardvpn-init.log` over `tailscale ssh` is the only diagnostic
+  path into a node with no inbound ports.
 
 ## 8. TTL and the watchdog
 
@@ -349,7 +460,13 @@ through the handler) and because it is where the idle notification hangs.
 Each run:
 
 1. `DescribeRegions`, then `DescribeInstances` per region filtered on
-   `shardvpn:role = exit-node` and states `pending`/`running`. Parallelised.
+   `shardvpn:role = exit-node` and states `pending`/`running`. **Parallelised
+   with a `ThreadPoolExecutor`** (stdlib, no dependency) over a cached
+   per-region client map. There are roughly 34 enabled regions; done
+   sequentially, with client construction and endpoint resolution per
+   iteration, this does not reliably fit in a 60-second timeout — and a
+   timed-out sweep is retried twice by the async invoke policy and then
+   dropped silently. Function timeout is 300s, which costs nothing.
 2. Reconcile `/shardvpn/current-node`.
 3. Terminate anything past `shardvpn:expires-at` (nothing, by default).
 4. For each live node, sum CloudWatch `NetworkOut` over the trailing 24 hours.
@@ -357,7 +474,12 @@ Each run:
    `shardvpn:last-idle-alert` is absent or older than 24 hours, publish to SNS
    and stamp the tag.
 5. Flag orphans — a tagged node in a region the pointer does not know about is
-   either drift or a launch you did not make.
+   either drift or a launch you did not make. **The two are worded
+   differently.** "The pointer disagrees" and "the pointer could not be read"
+   are distinct conditions, and only the first warrants suggesting a secret
+   rotation. A tripwire that cries intrusion on your own transient SSM errors
+   is a tripwire you learn to ignore.
+6. Terminate duplicates, keeping the newest by `shardvpn:launched-at`.
 
 `NetworkOut` is the right signal because exit-node traffic leaves the instance
 toward the client. It is part of EC2 basic monitoring: free, 5-minute
@@ -379,9 +501,18 @@ Execution role. Honest about what does and does not scope:
 
 - `ec2:TerminateInstances` — condition `ec2:ResourceTag/shardvpn:role = exit-node`.
   The destructive one, and it does support resource conditions.
-- `ec2:RunInstances` — resource ARNs for instance, volume, network-interface,
-  security-group, subnet, image; condition `aws:RequestTag/shardvpn:role` on
-  the instance resource.
+- `ec2:RunInstances` — **split into two statements**. The `instance/*` ARN
+  carries `aws:RequestTag/shardvpn:role = exit-node` and a `StringLike` bound
+  of `t4g.*` on `ec2:InstanceType`; a second statement covers the supporting
+  resource types (image, volume, network-interface, security-group, subnet)
+  where request-tag conditions do not apply uniformly.
+
+  Both halves matter. Without the request-tag condition, a bug in the tag
+  dictionary could produce an untagged instance that the tag-conditioned
+  `TerminateInstances` can **never** reap — neither `down` nor the watchdog
+  could remove it. Without the instance-type bound, nothing structural stops a
+  `p5.48xlarge`; the type comes from SSM today, but IAM is the only cap that
+  does not depend on this code being correct.
 - `ec2:CreateTags` — condition `ec2:CreateAction = RunInstances`, so it can
   only tag at launch. Second narrow statement for stamping
   `shardvpn:last-idle-alert`, conditioned on `ec2:ResourceTag/shardvpn:role`.
@@ -396,15 +527,35 @@ Execution role. Honest about what does and does not scope:
 **Cannot be scoped — `Resource: "*"`, and the spec says so rather than
 pretending otherwise**
 
-- `ec2:DescribeInstances`, `ec2:DescribeRegions`, `ec2:DescribeSecurityGroups`
-  — EC2 `Describe*` does not support resource-level permissions.
+- `ec2:DescribeInstances`, `ec2:DescribeRegions`, `ec2:DescribeSecurityGroups`,
+  `ec2:DescribeVpcs` — EC2 `Describe*` does not support resource-level
+  permissions.
 - `cloudwatch:GetMetricStatistics` — CloudWatch metrics do not support
   resource-level permissions.
 
 Both are read-only. There is no `iam:*` anywhere, no S3, and no long-lived
-access keys. `kms:Decrypt` on the SSM-managed key is added only if the
-AWS-managed `alias/aws/ssm` key policy turns out to require it — to be
-confirmed at implementation, not assumed.
+access keys.
+
+`kms:Decrypt` on the SSM-managed key is probably unnecessary — the AWS-managed
+`alias/aws/ssm` key policy grants account principals via a `kms:ViaService`
+condition — but "probably" is not good enough for something on the
+authentication hot path, where a failure surfaces as an opaque `502`.
+Verification is an explicit deployment step: assume the `shardvpn-lambda` role
+and run `aws ssm get-parameter --with-decryption` against the signing secret.
+Two minutes, and it removes the unknown.
+
+### 9.1 Operational safety net
+
+The premise of this project is that nothing runs between trips, which means
+nothing is watching. The watchdog is the only mechanism bounding cost, and it
+can fail permanently and silently: an async invoke retries twice and then
+disappears. Two CloudWatch alarms on the function — `Errors > 0` and
+`Throttles > 0`, both publishing to the existing SNS topic — close that hole
+for about twenty lines of Terraform.
+
+An `aws_budgets_budget` at a low monthly threshold, alarming to the same
+topic, is another ten lines and is the only defence that does not depend on
+any of this code being correct.
 
 ## 10. Public-repo security posture
 
@@ -418,7 +569,17 @@ what lands next to it.
   `aws ssm put-parameter --overwrite`. No secret enters state, a plan output,
   or the repo.
 - `.gitignore` covers `*.tfstate*`, `.terraform/`, `*.tfvars` (with
-  `terraform.tfvars.example` committed). `.terraform.lock.hcl` **is** committed.
+  `terraform.tfvars.example` committed) and `terraform/.build/`, where
+  `archive_file` writes the Lambda zip at apply time. `.terraform.lock.hcl`
+  **is** committed.
+- **v1 must be decommissioned before its code is deleted.** v1's README
+  instructs the operator to create an IAM user with `IAMFullAccess`,
+  `AmazonEC2FullAccess` and `AmazonS3FullAccess`, and a long-lived access key
+  in `~/.aws/credentials`. That user, its key, the `shard-vpn-keys` bucket and
+  any surviving certifier or drive instances all still exist. The claim "no
+  long-lived AWS access keys anywhere" is false until they are gone, and the
+  only tooling that tears v1 down is the shell scripts this rewrite deletes.
+  Decommissioning is therefore the first task, not a cleanup afterthought.
 - The email address for SNS lives in gitignored tfvars, not the repo.
 - The Function URL is unguessable but not secret and not independently
   rotatable. It stays out of the README, commits, and screenshots; it lives in
@@ -439,10 +600,19 @@ This is also better for secret storage — the signing secret goes in Keychain
 rather than a shortcut body. The script runs from a thin Shortcuts wrapper on
 the home screen, so it stays one tap.
 
+The client **retries with backoff on `429` and `5xx`**. Reserved concurrency 1
+means a concurrent sweep returns `429`, and a client that renders that as
+`undefined` on the notification would be indistinguishable from a real
+failure at exactly the wrong moment.
+
 To confirm during implementation, not assumed: whether Scriptable exposes any
 crypto primitive (its API index lists none, so the plan is a vendored ~60-line
 pure-JS HMAC-SHA256 with no dependencies; its `WebView` could reach WebCrypto
-as a fallback), and whether Keychain values sync to iCloud.
+as a fallback), **whether `TextEncoder` exists** (JavaScriptCore does not
+provide it natively and Scriptable's API index does not list it — its absence
+breaks the client outright with a `ReferenceError`, so the byte encoding must
+fall back to a manual UTF-8 encoder), and whether Keychain values sync to
+iCloud.
 
 ## 12. Runtime and dependencies
 
@@ -486,6 +656,16 @@ Languages: Python (Lambda), HCL (Terraform), bash (cloud-init), JavaScript
 | `shell` | `shellcheck lambda/userdata.sh` |
 | `scan` | `trivy config terraform/` (tfsec is deprecated; its checks moved to Trivy), plus `gitleaks` |
 
+**Each job is added by the task that creates its input, not up front.** A CI
+pipeline that is deliberately red for most of the build gates nothing — nobody
+can distinguish an expected failure from a real regression, which is the
+opposite of the point. The `python` job exists from the first commit and stays
+green; `shell`, `terraform` and `scan` arrive with the files they check.
+
+Third-party actions are pinned to release tags, never `@master` — an unpinned
+ref in the job whose purpose is supply-chain hygiene is self-defeating, and
+Dependabot cannot update it either.
+
 **No AWS credentials in CI.** Every job is offline — `-backend=false` is what
 makes `validate` work without them. Adding static keys to GitHub would violate
 the constraint the brief is most emphatic about. If plan-on-PR is ever wanted,
@@ -509,9 +689,24 @@ version drift). Covering:
 - `expires-at` parsing and the `never` case.
 - The idle decision over a synthetic metric series, including the
   `last-idle-alert` debounce.
-- Pointer reconciliation, including drift and orphan cases.
+- Pointer reconciliation, including drift, orphan and duplicate cases.
 - Response shaping for each `state`.
 - Tailscale calls mocked at the `urllib` boundary.
+
+`sweep` is the most complex function in the system and the only one that runs
+unattended, so it must be genuinely testable rather than nominally covered.
+It therefore **takes a client factory as a parameter** (`sweep(now,
+client_factory=boto3.client)`) instead of constructing its own clients — one
+argument, and the multi-region scan, reap, orphan, duplicate and debounce
+paths all become stubbable.
+
+Every action path is wrapped in a top-level handler that logs the exception
+type and returns a `500` with the request id. Two reasons: an unhandled
+`ClientError` otherwise becomes a bodyless `502` that the phone renders as
+`undefined`, and botocore's `ParamValidationError` can embed offending
+parameter values — which for `run_instances` means the `UserData` carrying a
+minted auth key. Catching around the launch and logging only the exception
+type is what keeps the "never log an auth key" constraint true.
 
 **Terraform** — `fmt`, `validate`, `trivy`.
 
@@ -559,12 +754,16 @@ Verified against current documentation on 2026-07-31/08-01, not from memory.
 | Component | Version |
 |---|---|
 | Terraform core | 1.15.8 — constraint `>= 1.13` |
-| `hashicorp/aws` | 6.57.1 — constraint `~> 6.57` |
+| `hashicorp/aws` | 6.57.1 — constraint `~> 6.57`. Floor is really 6.28, which added `invoked_via_function_url` |
 | Lambda runtime | `python3.13` (AL2023, deprecates 2029-06-30) |
 | Node OS | Amazon Linux 2023, arm64 |
 | Instance | `t4g.small` |
-| `actions/checkout` | v7 |
-| `actions/setup-python` | v7 |
+| `actions/checkout` | v7 — v7.0.1, published 2026-07-20, re-confirmed against the releases API |
+| `actions/setup-python` | v7 — v7.0.0, published 2026-07-20 |
+
+`hashicorp/setup-terraform`, `aquasecurity/trivy-action` and
+`gitleaks/gitleaks-action` majors are to be checked against their release
+pages when the workflow is written, and pinned to tags.
 
 ## 17. Decisions
 
@@ -589,12 +788,30 @@ Verified against current documentation on 2026-07-31/08-01, not from memory.
   pre-provisioning every region, contradicting the design's core simplification.
   Saving is $0.12/day.
 
+Added after external review:
+
+- v1 is decommissioned — IAM user, access key, S3 bucket and instances — as
+  the first task, before the code that tears it down is deleted.
+- Lambda code ships as a package, not loose modules.
+- Two `aws_lambda_permission` resources; a `NONE` function URL is not public
+  without them.
+- `up` fails closed on an unreadable pointer; duplicates are terminated, not
+  just reported.
+- IAM bounds `ec2:InstanceType` to `t4g.*` and conditions `RunInstances` on
+  the role request tag.
+- CloudWatch alarms on function errors and throttles, plus a monthly budget.
+
 **Open, to resolve during implementation**
 
 - The idle threshold value (set by measurement).
-- Whether Scriptable exposes a crypto primitive, or a vendored HMAC is needed.
+- Whether Scriptable exposes a crypto primitive, and whether `TextEncoder`
+  exists there.
 - Whether Keychain values sync to iCloud.
-- Whether `kms:Decrypt` must be granted explicitly for `alias/aws/ssm`.
+- Whether `kms:Decrypt` must be granted explicitly for `alias/aws/ssm` —
+  now with an explicit verification step rather than an assumption.
+- Whether `tailscale up --hostname` surfaces verbatim as the API device
+  object's `hostname`. Mitigated by matching on tags instead.
+- The exact `tailscale status --json` key for exit-node advertisement.
 - Current AWS free egress allowance, for the README.
 
 ## 18. Out of scope
