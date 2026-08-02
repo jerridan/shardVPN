@@ -53,7 +53,21 @@ def ensure_security_group(ec2) -> str:
         ]
     )["SecurityGroups"]
     if existing:
-        return existing[0]["GroupId"]
+        group = existing[0]
+        # The zero-ingress guarantee only holds for a group this code
+        # created: it never calls authorize_security_group_ingress. If
+        # someone added a rule by hand (e.g. temporary 0.0.0.0/0:22 while
+        # debugging) and forgot to remove it, blindly reusing the group
+        # would silently attach that rule to every future launch. Fail
+        # loudly instead of returning a group that no longer matches the
+        # README's "zero inbound rules" claim.
+        if group.get("IpPermissions"):
+            raise RuntimeError(
+                f"security group {group['GroupId']} ({SG_NAME}) has ingress rules; "
+                "refusing to reuse it — shardVPN's zero-inbound guarantee only holds "
+                "for a group this code created itself"
+            )
+        return group["GroupId"]
 
     return ec2.create_security_group(GroupName=SG_NAME, Description=SG_DESCRIPTION, VpcId=vpc_id)[
         "GroupId"

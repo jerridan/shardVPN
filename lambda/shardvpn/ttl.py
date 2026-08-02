@@ -28,7 +28,17 @@ def parse_rfc3339(value: str) -> datetime:
 
 def parse_ttl(ttl: str | None, now: datetime) -> str:
     """Turn a TTL like '48h' into an absolute expiry, or NEVER."""
-    if ttl is None or ttl in _NO_EXPIRY:
+    if ttl is None:
+        return NEVER
+    # A caller passes this straight from parsed JSON, so it can be any JSON
+    # type — {"action":"up","ttl":123} is a valid request from an
+    # authenticated caller. re.match on a non-string raises TypeError, which
+    # handler.py's `except ValueError` does not catch, turning a malformed
+    # request into a 500 instead of a 400. Same hardening auth.py already
+    # applies to header values.
+    if not isinstance(ttl, str):
+        raise ValueError(f"ttl must be a string: {ttl!r}")
+    if ttl in _NO_EXPIRY:
         return NEVER
 
     match = _TTL_PATTERN.match(ttl)

@@ -17,9 +17,13 @@ locals {
 resource "aws_ssm_parameter" "secret" {
   for_each = toset(local.secret_parameters)
 
-  name  = each.value
-  type  = "SecureString"
-  tier  = "Standard"
+  name = each.value
+  type = "SecureString"
+  tier = "Standard"
+  # Must stay byte-identical to PLACEHOLDER_SIGNING_SECRET in
+  # lambda/shardvpn/settings.py: handler.py checks the retrieved signing
+  # secret against that constant and fails closed (503) rather than ever
+  # verifying a request against this published literal.
   value = "PLACEHOLDER-set-with-aws-ssm-put-parameter"
 
   lifecycle {

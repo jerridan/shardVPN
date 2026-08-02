@@ -49,6 +49,45 @@ def test_ensure_security_group_reuses_an_existing_group_in_the_default_vpc(ec2):
         assert ec2ops.ensure_security_group(ec2) == "sg-existing"
 
 
+def test_ensure_security_group_refuses_to_reuse_a_group_with_ingress_rules(ec2):
+    # The zero-ingress guarantee only holds for a group this code created.
+    # If a reused group somehow has ingress rules (e.g. added by hand while
+    # debugging and forgotten), returning it silently would make the
+    # README's "zero inbound rules" claim false with no signal at all.
+    with Stubber(ec2) as stub:
+        stub.add_response(
+            "describe_vpcs",
+            {"Vpcs": [{"VpcId": "vpc-default"}]},
+            {"Filters": [{"Name": "isDefault", "Values": ["true"]}]},
+        )
+        stub.add_response(
+            "describe_security_groups",
+            {
+                "SecurityGroups": [
+                    {
+                        "GroupId": "sg-existing",
+                        "IpPermissions": [
+                            {
+                                "IpProtocol": "tcp",
+                                "FromPort": 22,
+                                "ToPort": 22,
+                                "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+                            }
+                        ],
+                    }
+                ]
+            },
+            {
+                "Filters": [
+                    {"Name": "group-name", "Values": [ec2ops.SG_NAME]},
+                    {"Name": "vpc-id", "Values": ["vpc-default"]},
+                ]
+            },
+        )
+        with pytest.raises(RuntimeError, match="ingress"):
+            ec2ops.ensure_security_group(ec2)
+
+
 def test_ensure_security_group_creates_one_and_adds_no_rules(ec2):
     # CreateSecurityGroup already attaches allow-all egress. Adding it again
     # returns InvalidPermission.Duplicate and breaks every first launch.

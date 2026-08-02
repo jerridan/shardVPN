@@ -8,7 +8,8 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
-from shardvpn import handler, settings
+from shardvpn import ec2ops, handler, settings
+from shardvpn.render import render_userdata
 
 SIGNING_KEY = "s3cr3t"
 
@@ -69,6 +70,22 @@ def test_returns_503_when_the_signing_secret_cannot_be_retrieved():
     assert response["statusCode"] == 503
     assert response["statusCode"] != 403
     assert response["body"] != "{}"
+    assert json.loads(response["body"]) == {"error": "cannot verify request"}
+
+
+def test_returns_503_when_the_signing_secret_is_still_the_placeholder():
+    # terraform/ssm.tf seeds /shardvpn/signing-secret with this exact literal
+    # and never writes a real value itself; if the out-of-band
+    # `aws ssm put-parameter --overwrite` step is skipped, the "secret" is a
+    # string committed to this public repository. Must fail closed via the
+    # existing 503 path rather than ever verifying a request against it.
+    with patch(
+        "shardvpn.handler.settings.cached_secret",
+        return_value=settings.PLACEHOLDER_SIGNING_SECRET,
+    ):
+        response = handler.lambda_handler(signed_event({"action": "status"}), None)
+
+    assert response["statusCode"] == 503
     assert json.loads(response["body"]) == {"error": "cannot verify request"}
 
 
@@ -187,6 +204,59 @@ def test_up_repairs_the_pointer_when_recovering_a_node_in_the_target_region():
     )
 
 
+def test_up_launches_a_node_with_correctly_tagged_kwargs():
+    # Every other `up` test in this file asserts launch.assert_not_called(),
+    # so the actual launch branch — the one iam.tf's LaunchTaggedExitNodes
+    # statement conditions on (aws:RequestTag/shardvpn:role = exit-node) —
+    # was never exercised. A misspelled tag key here fails with
+    # UnauthorizedOperation, live, with no test to have caught it first.
+    with (
+        patch("shardvpn.handler.settings.read_pointer", return_value=None),
+        patch("shardvpn.handler.ec2ops.valid_regions", return_value=["ca-central-1"]),
+        patch("shardvpn.handler.ec2ops.find_nodes", return_value=[]),
+        patch("shardvpn.handler.ec2ops.resolve_ami", return_value="ami-0abc"),
+        patch("shardvpn.handler.settings.get_parameter", return_value="t4g.small"),
+        patch("shardvpn.handler.ec2ops.ensure_security_group", return_value="sg-0shard"),
+        patch("shardvpn.handler.tailscale.get_token", return_value="tok"),
+        patch("shardvpn.handler.tailscale.mint_auth_key", return_value="tskey-auth-xyz"),
+        patch("shardvpn.handler.ec2ops.launch", return_value="i-0new") as launch,
+        patch("shardvpn.handler.settings.write_pointer") as write_pointer,
+    ):
+        response = handler.lambda_handler(
+            signed_event({"action": "up", "region": "ca-central-1", "ttl": "48h"}), None
+        )
+
+    assert response["statusCode"] == 200
+    body = json.loads(response["body"])
+    assert body["state"] == "pending"
+    assert body["region"] == "ca-central-1"
+    assert body["instance_id"] == "i-0new"
+    hostname = body["hostname"]
+    assert hostname.startswith("shardvpn-ca-central-1-")
+    assert body["expires_at"] is not None and body["expires_at"].endswith("Z")
+
+    launch.assert_called_once()
+    kwargs = launch.call_args.kwargs
+    assert kwargs["ami"] == "ami-0abc"
+    assert kwargs["instance_type"] == "t4g.small"
+    assert kwargs["sg_id"] == "sg-0shard"
+    assert kwargs["user_data"] == render_userdata("tskey-auth-xyz", hostname)
+    assert kwargs["client_token"] == f"shardvpn-{hostname}"
+
+    tags = kwargs["tags"]
+    assert tags["Name"] == hostname
+    assert tags[ec2ops.TAG_ROLE] == ec2ops.ROLE_VALUE
+    assert tags[ec2ops.TAG_HOSTNAME] == hostname
+    assert tags[ec2ops.TAG_LAUNCHED].endswith("Z")
+    assert tags[ec2ops.TAG_EXPIRES] == body["expires_at"]
+
+    write_pointer.assert_called_once_with(
+        ANY,
+        settings.PARAM_NAMES["current_node"],
+        settings.Pointer("ca-central-1", "i-0new"),
+    )
+
+
 def test_up_fails_closed_when_the_pointer_cannot_be_read():
     # A transient SSM error must not be read as 'no node' and launch a second.
     with (
@@ -224,6 +294,23 @@ def test_up_rejects_a_malformed_ttl():
         patch("shardvpn.handler.ec2ops.launch") as launch,
     ):
         response = handler.lambda_handler(signed_event({"action": "up", "ttl": "soon"}), None)
+
+    launch.assert_not_called()
+    assert response["statusCode"] == 400
+
+
+def test_up_rejects_a_non_string_ttl():
+    # {"action":"up","ttl":123} is valid JSON from an authenticated caller.
+    # Before ttl.parse_ttl hardened against this, it raised TypeError, which
+    # only `except ValueError` catches here — turning a malformed request
+    # into an opaque 500 instead of a 400.
+    with (
+        patch("shardvpn.handler.settings.read_pointer", return_value=None),
+        patch("shardvpn.handler.ec2ops.valid_regions", return_value=["ca-central-1"]),
+        patch("shardvpn.handler.settings.get_parameter", return_value="ca-central-1"),
+        patch("shardvpn.handler.ec2ops.launch") as launch,
+    ):
+        response = handler.lambda_handler(signed_event({"action": "up", "ttl": 123}), None)
 
     launch.assert_not_called()
     assert response["statusCode"] == 400

@@ -19,6 +19,16 @@ def test_preserves_heredoc_shell_variables():
     assert 'ethtool -K "${NETDEV}"' in render_userdata("k", "h")
 
 
+def test_authkey_appears_exactly_once_in_rendered_output():
+    # userdata.sh's header comment used to mention ${TS_AUTHKEY} literally,
+    # so safe_substitute rewrote it into a second, nonsensical copy of the
+    # live auth key sitting in a comment. Pin that the key appears exactly
+    # where it belongs (the `tailscale up --auth-key=` line) and nowhere
+    # else.
+    out = render_userdata("tskey-auth-onceonly", "shardvpn-ca-central-1-4f2a")
+    assert out.count("tskey-auth-onceonly") == 1
+
+
 def test_starts_with_a_shebang():
     assert render_userdata("k", "h").startswith("#!/bin/bash")
 

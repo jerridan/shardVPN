@@ -344,3 +344,44 @@ def test_sweep_aborts_without_reconciling_when_region_discovery_fails():
     assert result["nodes"] == []
     assert any("valid_regions" in f for f in result["failures"])
     factory.ssm.put_parameter.assert_not_called()
+
+
+# --- failure reporting: a clean-looking invocation must still be alarmable -
+
+
+def test_sweep_publishes_a_summary_when_it_has_failures():
+    # This is the exact scenario from the review: sweep is engineered never
+    # to raise, so the "Errors > 0" Lambda alarm never fires for a sweep that
+    # caught and recorded failures internally. Without a publish here, a
+    # permanently failing idle-threshold read (or any other isolated
+    # failure) would log quietly forever with no alarm and no email.
+    factory = make_factory(
+        {"ca-central-1": [node("i-0idle", launched="2026-07-30T00:00:00Z")]},
+        threshold_error=RuntimeError("ssm down"),
+    )
+    result = sweep_with(factory)
+    assert result["failures"]
+    messages = [c.kwargs["Message"] for c in factory.sns.publish.call_args_list]
+    assert any("sweep completed with failures" in m for m in messages)
+
+
+def test_sweep_does_not_publish_a_failure_summary_when_clean():
+    factory = make_factory({"eu-west-1": [node("i-0ok", launched="2026-07-30T00:00:00Z")]})
+    result = sweep_with(factory)
+    assert result["failures"] == []
+    messages = [c.kwargs["Message"] for c in factory.sns.publish.call_args_list]
+    assert not any("sweep completed with failures" in m for m in messages)
+
+
+def test_sweep_publishes_a_failure_summary_even_when_region_discovery_aborts_it():
+    # The specific disaster scenario from the review: ec2:DescribeRegions
+    # itself fails, so the sweep returns early (step 1-4 never run). This
+    # exit path must still notify, or the sweep degrades to permanently
+    # silent no matter how the failure happened.
+    factory = make_factory({})
+    factory("ec2", region_name="ca-central-1").describe_regions.side_effect = RuntimeError(
+        "ec2 down"
+    )
+    sweep_with(factory)
+    messages = [c.kwargs["Message"] for c in factory.sns.publish.call_args_list]
+    assert any("sweep completed with failures" in m for m in messages)

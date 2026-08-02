@@ -57,6 +57,16 @@ def lambda_handler(event: dict, context) -> dict:
         log.error("could not retrieve signing secret: %s", type(exc).__name__)
         return _respond(503, {"error": "cannot verify request"})
 
+    # terraform/ssm.tf seeds this parameter with a placeholder and never
+    # writes a real value itself; if the out-of-band `aws ssm put-parameter`
+    # step was never run, the "secret" is a literal committed to this public
+    # repo and anyone with the Function URL could compute a valid signature.
+    # Reuses the existing 503 path (infrastructure not ready, not a
+    # verification result) rather than inventing a new response shape.
+    if secret == settings.PLACEHOLDER_SIGNING_SECRET:
+        log.error("signing secret has not been populated; refusing to verify requests")
+        return _respond(503, {"error": "cannot verify request"})
+
     try:
         verify(event.get("headers") or {}, extract_body(event), secret, int(time.time()))
     except AuthError:

@@ -60,6 +60,16 @@ def test_rejects_malformed_or_absurd_ttl(bad):
         parse_ttl(bad, NOW)
 
 
+@pytest.mark.parametrize("bad", [123, 48.0, ["48h"], {"ttl": "48h"}, True])
+def test_rejects_a_non_string_ttl(bad):
+    # {"action":"up","ttl":123} is valid JSON from an authenticated caller.
+    # re.match on a non-string raises TypeError, which handler.py's
+    # `except ValueError` does not catch — this must be a ValueError like
+    # every other malformed-ttl case, or the request 500s instead of 400s.
+    with pytest.raises(ValueError):
+        parse_ttl(bad, NOW)
+
+
 def test_never_is_not_expired():
     assert is_expired(NEVER, NOW) is False
 

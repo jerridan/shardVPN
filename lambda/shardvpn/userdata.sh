@@ -1,6 +1,6 @@
 #!/bin/bash
 # shardVPN exit node bootstrap.
-# ${TS_AUTHKEY} and ${TS_HOSTNAME} are substituted by render.py via
+# The Tailscale auth key and hostname below are substituted by render.py via
 # string.Template before this is passed as EC2 user data.
 #
 # Ordering matters: forwarding and GRO must be configured before tailscaled

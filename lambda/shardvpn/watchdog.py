@@ -178,6 +178,7 @@ def sweep(
     except Exception as exc:
         log.error("could not enumerate regions; sweep aborted: %s", exc)
         summary["failures"].append(f"valid_regions: {exc}")
+        _notify_failures(sns, topic_arn, summary)
         return summary
 
     def scan(region: str) -> tuple[str, list[dict]]:
@@ -313,8 +314,32 @@ def sweep(
             log.warning("pointer reconciliation failed: %s", exc)
             summary["failures"].append(f"pointer reconciliation: {exc}")
 
+    _notify_failures(sns, topic_arn, summary)
+
     log.info("sweep complete: %s", summary)
     return summary
+
+
+def _notify_failures(sns, topic_arn: str | None, summary: dict) -> None:
+    """Publish a summary of this sweep's failures, if there were any.
+
+    `summary["failures"]` otherwise only ever reaches log.info: on its own
+    that satisfies nothing external, because the CloudWatch alarm in
+    alarms.tf watches Lambda `Errors`, which only counts unhandled
+    exceptions/timeouts/OOM — never a successful invocation that returns a
+    summary full of caught, recorded failures. Without this, a sweep that
+    fails at every single node forever (e.g. ec2:DescribeRegions itself
+    starts failing) logs quietly and alarms nothing, every hour, forever.
+    Routed through the existing best-effort _publish so a publish failure
+    here can't resurrect the old propagate-and-abort behaviour.
+    """
+    if not summary["failures"]:
+        return
+    _publish(
+        sns,
+        topic_arn,
+        "shardvpn: sweep completed with failures: " + "; ".join(summary["failures"]),
+    )
 
 
 def _publish(sns, topic_arn: str | None, message: str) -> None:

@@ -123,6 +123,31 @@ aws ssm put-parameter --name /shardvpn/signing-secret --type SecureString \
 The Tailscale client ID and secret come from step 5 below; do that first if
 you're following this list top to bottom, or come back here after.
 
+**Verify `kms:Decrypt` works before relying on it.** The Lambda's IAM role
+(`iam.tf`) does not grant `kms:Decrypt` on the AWS-managed `alias/aws/ssm`
+key explicitly — the design assumes that key's own policy already lets
+account principals decrypt via a `kms:ViaService` condition. That's a
+"probably" sitting on the authentication hot path: if it's wrong, every
+`up`/`down`/`status` request returns a 503 with nothing else to explain why.
+The `shardvpn-lambda` role can't be assumed directly to check by hand — its
+trust policy only allows `lambda.amazonaws.com` — so verify it the way a
+real request actually exercises it instead: `handler.py` fetches and
+decrypts the signing secret *before* checking the signature, so hitting the
+Function URL with a deliberately wrong signature isolates the KMS step from
+everything else:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "$(terraform -chdir=terraform output -raw function_url)" \
+  -H 'x-shardvpn-timestamp: 1700000000' \
+  -H "x-shardvpn-signature: $(printf '0%.0s' {1..64})" \
+  -d '{"action":"status"}'
+```
+
+`403` means the secret was retrieved and decrypted fine — the request was
+simply, correctly, rejected for a bad signature. `503` means the role needs
+an explicit `kms:Decrypt` statement scoped to `alias/aws/ssm` added to
+`iam.tf`.
+
 ### 4. Confirm the SNS email subscription
 
 `terraform apply` creates an email subscription to the notifications topic
@@ -234,7 +259,7 @@ uv run ruff format --check .
 uv run pytest -v
 ```
 
-169 tests, fully offline: `botocore.stub.Stubber` for every AWS call,
+182 tests, fully offline: `botocore.stub.Stubber` for every AWS call,
 `urlopen` patched for Tailscale, a client factory for the watchdog sweep.
 There is no integration test suite — the real verification is an end-to-end
 run against live AWS and a live tailnet (`curl ifconfig.me` through the node

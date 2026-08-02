@@ -19,6 +19,18 @@ PARAM_NAMES = {
 EMPTY = "none"
 SECRET_TTL_SECONDS = 300
 
+# terraform/ssm.tf seeds the three secret SSM parameters with this exact
+# literal, then leaves them alone (`lifecycle { ignore_changes = [value] }`)
+# until populated for real with `aws ssm put-parameter --overwrite`. It is
+# committed to a public repository, so if the out-of-band population step is
+# ever skipped, this string is a valid, published signing secret that anyone
+# with the Function URL can sign requests with. Kept here as a named
+# constant — rather than a magic string only handler.py knows — so the two
+# copies (this one, and the literal in terraform/ssm.tf) are visibly the same
+# known value; Terraform has no way to import this constant directly, so
+# keeping the literal in ssm.tf in sync with this one is a manual invariant.
+PLACEHOLDER_SIGNING_SECRET = "PLACEHOLDER-set-with-aws-ssm-put-parameter"
+
 _SECRET_CACHE: dict[str, tuple[float, str]] = {}
 
 

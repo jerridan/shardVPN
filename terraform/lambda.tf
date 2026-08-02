@@ -2,7 +2,12 @@ data "archive_file" "lambda" {
   type        = "zip"
   source_dir  = "${path.module}/../lambda"
   output_path = "${path.module}/.build/shardvpn.zip"
-  excludes    = ["__pycache__", "shardvpn/__pycache__"]
+  # Directory names alone don't match anything here — excludes wants a glob.
+  # Without the doublestar wildcard, `pytest` writing
+  # lambda/shardvpn/__pycache__/*.pyc silently landed in the zip, churning
+  # source_code_hash and triggering a needless Lambda redeploy on the next
+  # apply.
+  excludes = ["**/__pycache__/**"]
 }
 
 resource "aws_cloudwatch_log_group" "shardvpn" {
