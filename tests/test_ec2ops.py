@@ -67,7 +67,16 @@ def test_ensure_security_group_creates_one_and_adds_no_rules(ec2):
 
 def test_find_nodes_returns_empty_when_none(ec2):
     with Stubber(ec2) as stub:
-        stub.add_response("describe_instances", {"Reservations": []})
+        stub.add_response(
+            "describe_instances",
+            {"Reservations": []},
+            {
+                "Filters": [
+                    {"Name": f"tag:{ec2ops.TAG_ROLE}", "Values": [ec2ops.ROLE_VALUE]},
+                    {"Name": "instance-state-name", "Values": ec2ops.LIVE_STATES},
+                ]
+            },
+        )
         assert ec2ops.find_nodes(ec2) == []
 
 
@@ -77,7 +86,16 @@ def test_find_nodes_returns_all_live_instances(ec2):
         {"Instances": [{"InstanceId": "i-0bbb", "State": {"Name": "pending"}}]},
     ]
     with Stubber(ec2) as stub:
-        stub.add_response("describe_instances", {"Reservations": reservations})
+        stub.add_response(
+            "describe_instances",
+            {"Reservations": reservations},
+            {
+                "Filters": [
+                    {"Name": f"tag:{ec2ops.TAG_ROLE}", "Values": [ec2ops.ROLE_VALUE]},
+                    {"Name": "instance-state-name", "Values": ec2ops.LIVE_STATES},
+                ]
+            },
+        )
         assert [i["InstanceId"] for i in ec2ops.find_nodes(ec2)] == ["i-0aaa", "i-0bbb"]
 
 
@@ -141,6 +159,19 @@ def test_terminate_calls_terminate_instances(ec2):
         ec2ops.terminate(ec2, "i-0abc")
 
 
+def test_stamp_tag_calls_create_tags(ec2):
+    with Stubber(ec2) as stub:
+        stub.add_response(
+            "create_tags",
+            {},
+            {
+                "Resources": ["i-0abc"],
+                "Tags": [{"Key": ec2ops.TAG_ALERTED, "Value": "2026-08-01T12:00:00Z"}],
+            },
+        )
+        ec2ops.stamp_tag(ec2, "i-0abc", ec2ops.TAG_ALERTED, "2026-08-01T12:00:00Z")
+
+
 def test_valid_regions_lists_region_names(ec2):
     with Stubber(ec2) as stub:
         stub.add_response(
@@ -155,6 +186,15 @@ def test_network_out_bytes_sums_datapoints(cw):
         stub.add_response(
             "get_metric_statistics",
             {"Datapoints": [{"Sum": 1000.0, "Timestamp": NOW}, {"Sum": 2500.0, "Timestamp": NOW}]},
+            {
+                "Namespace": "AWS/EC2",
+                "MetricName": "NetworkOut",
+                "Dimensions": [{"Name": "InstanceId", "Value": "i-0abc"}],
+                "StartTime": ANY,
+                "EndTime": ANY,
+                "Period": 300,
+                "Statistics": ["Sum"],
+            },
         )
         assert ec2ops.network_out_bytes(cw, "i-0abc", 24, NOW) == 3500
 
@@ -172,6 +212,15 @@ def test_network_out_returns_sorted_timestamped_points(cw):
         stub.add_response(
             "get_metric_statistics",
             {"Datapoints": [{"Sum": 5.0, "Timestamp": late}, {"Sum": 9.0, "Timestamp": early}]},
+            {
+                "Namespace": "AWS/EC2",
+                "MetricName": "NetworkOut",
+                "Dimensions": [{"Name": "InstanceId", "Value": "i-0abc"}],
+                "StartTime": ANY,
+                "EndTime": ANY,
+                "Period": 300,
+                "Statistics": ["Sum"],
+            },
         )
         assert ec2ops.network_out(cw, "i-0abc", 24, NOW) == [(early, 9.0), (late, 5.0)]
 
