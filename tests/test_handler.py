@@ -2,8 +2,9 @@
 import hashlib
 import hmac
 import json
+import logging
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -151,6 +152,41 @@ def test_up_does_not_launch_when_a_node_already_exists_in_the_target_region():
     assert json.loads(response["body"])["instance_id"] == "i-0existing"
 
 
+def test_up_repairs_the_pointer_when_recovering_a_node_in_the_target_region():
+    # An unrepaired pointer here is what lets a later `down` report success
+    # while the recovered node keeps running and billing: read_pointer would
+    # keep returning None, so `_down` would take its early "nothing to do"
+    # return without ever calling terminate. This pins that the recovery
+    # branch writes the real discovered instance id, not the launch path's
+    # pointer only.
+    existing = {
+        "InstanceId": "i-0recovered",
+        "State": {"Name": "running"},
+        "Tags": [{"Key": "shardvpn:launched-at", "Value": "2026-08-01T09:46:00Z"}],
+    }
+    with (
+        patch("shardvpn.handler.settings.read_pointer", return_value=None),
+        patch("shardvpn.handler.ec2ops.valid_regions", return_value=["ca-central-1"]),
+        patch("shardvpn.handler.ec2ops.find_nodes", return_value=[existing]),
+        patch("shardvpn.handler.ec2ops.launch") as launch,
+        patch("shardvpn.handler.ec2ops.network_out", return_value=[]),
+        patch("shardvpn.handler.tailscale.get_token", return_value="tok"),
+        patch("shardvpn.handler.tailscale.find_device", return_value=None),
+        patch("shardvpn.handler.settings.write_pointer") as write_pointer,
+    ):
+        response = handler.lambda_handler(
+            signed_event({"action": "up", "region": "ca-central-1", "ttl": "48h"}), None
+        )
+
+    launch.assert_not_called()
+    assert response["statusCode"] == 200
+    write_pointer.assert_called_once_with(
+        ANY,
+        settings.PARAM_NAMES["current_node"],
+        settings.Pointer("ca-central-1", "i-0recovered"),
+    )
+
+
 def test_up_fails_closed_when_the_pointer_cannot_be_read():
     # A transient SSM error must not be read as 'no node' and launch a second.
     with (
@@ -211,8 +247,76 @@ def test_down_terminates_every_live_node():
     assert response["statusCode"] == 200
 
 
+def test_down_terminates_an_orphaned_node_in_the_default_region_when_the_pointer_is_none():
+    # No pointer does not mean no node: a launch whose write_pointer failed
+    # after RunInstances already succeeded leaves a live, billing node with
+    # nothing tracking it. `down` must not silently report "absent" while
+    # that node keeps running — it has to check the default region first.
+    orphan = {"InstanceId": "i-0orphan", "State": {"Name": "running"}, "Tags": []}
+    with (
+        patch("shardvpn.handler.settings.read_pointer", return_value=None),
+        patch("shardvpn.handler.settings.get_parameter", return_value="ca-central-1"),
+        patch("shardvpn.handler.ec2ops.find_nodes", return_value=[orphan]),
+        patch("shardvpn.handler.ec2ops.terminate") as terminate,
+    ):
+        response = handler.lambda_handler(signed_event({"action": "down"}), None)
+
+    terminate.assert_called_once_with(ANY, "i-0orphan")
+    assert response["statusCode"] == 200
+    assert json.loads(response["body"])["state"] == "absent"
+
+
+def test_status_degrades_idle_to_none_when_cloudwatch_fails():
+    # Mirrors the Tailscale lookup's degrade-not-fail behavior: idle_for is
+    # strictly less important than the rest of the status document, so a
+    # CloudWatch throttle or permissions gap must not turn `status` into a
+    # bare 500 the way it would have before this call was isolated.
+    node = {
+        "InstanceId": "i-0cw",
+        "State": {"Name": "running"},
+        "Tags": [{"Key": "shardvpn:launched-at", "Value": "2020-01-01T00:00:00Z"}],
+    }
+    with (
+        patch("shardvpn.handler.settings.read_pointer") as pointer,
+        patch("shardvpn.handler.ec2ops.find_nodes", return_value=[node]),
+        patch("shardvpn.handler.ec2ops.network_out", side_effect=RuntimeError("boom")),
+        patch("shardvpn.handler.tailscale.get_token", return_value="tok"),
+        patch("shardvpn.handler.tailscale.find_device", return_value={"id": "1"}),
+    ):
+        pointer.return_value = settings.Pointer("ca-central-1", "i-0cw")
+        response = handler.lambda_handler(signed_event({"action": "status"}), None)
+
+    assert response["statusCode"] == 200
+    body = json.loads(response["body"])
+    assert body["instance_id"] == "i-0cw"
+    assert body["idle_for"] is None
+
+
 def test_unexpected_errors_become_500_not_502():
     with patch("shardvpn.handler.settings.read_pointer", side_effect=RuntimeError("boom")):
         response = handler.lambda_handler(signed_event({"action": "status"}), None)
     assert response["statusCode"] == 500
     assert "boom" not in response["body"]
+
+
+def test_generic_exception_handler_never_logs_the_exception_body(caplog):
+    # The correctness of log.error (not log.exception) in the generic
+    # exception handler is the highest-stakes line in this file — the
+    # difference between "internal error" and a live auth key leaked into
+    # CloudWatch Logs — and it must not rest on a comment alone. A future
+    # revert to log.exception would attach a traceback ending in
+    # "RuntimeError: <secret_marker>" (making it appear in caplog.text) and
+    # would set exc_info on the record; this test fails on either signal.
+    secret_marker = "sk-fake-test-secret-3f9a7c21"
+    with patch(
+        "shardvpn.handler.settings.read_pointer",
+        side_effect=RuntimeError(secret_marker),
+    ):
+        with caplog.at_level(logging.WARNING):
+            response = handler.lambda_handler(signed_event({"action": "status"}), None)
+
+    assert response["statusCode"] == 500
+    assert secret_marker not in response["body"]
+    assert secret_marker not in caplog.text
+    for record in caplog.records:
+        assert record.exc_info is None

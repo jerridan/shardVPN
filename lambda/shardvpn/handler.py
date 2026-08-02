@@ -136,8 +136,17 @@ def _describe(control_ssm, pointer) -> dict:
     # CloudWatch basic monitoring lags several minutes, so a young node would
     # otherwise report itself as maximally idle.
     if instance["State"]["Name"] == "running" and not fresh:
-        cw = boto3.client("cloudwatch", region_name=pointer.region)
-        idle = watchdog.idle_seconds(ec2ops.network_out(cw, instance["InstanceId"], 24, now), now)
+        try:
+            cw = boto3.client("cloudwatch", region_name=pointer.region)
+            idle = watchdog.idle_seconds(
+                ec2ops.network_out(cw, instance["InstanceId"], 24, now), now
+            )
+        except Exception as exc:
+            # Mirrors the Tailscale lookup above: idle_for is strictly less
+            # important than the rest of the status document, so a
+            # CloudWatch throttle or permissions gap must degrade to
+            # idle: None rather than fail the whole request.
+            log.warning("idle lookup unavailable: %s", type(exc).__name__)
 
     return statusdoc.build(instance, pointer.region, online, idle, now)
 
@@ -150,6 +159,17 @@ def _status(control_ssm) -> dict:
 def _down(control_ssm) -> dict:
     pointer = settings.read_pointer(control_ssm, settings.PARAM_NAMES["current_node"])
     if pointer is None:
+        # No pointer does not mean no node: a launch whose write_pointer call
+        # failed after RunInstances already succeeded leaves a live, billing
+        # node with nothing tracking it. Reporting success while a node
+        # keeps running is the worst failure this API has, so check the
+        # default region — one extra DescribeInstances, not a global sweep —
+        # before giving up. Cross-region orphan recovery is the watchdog's
+        # job, not this request path's.
+        region = settings.get_parameter(control_ssm, settings.PARAM_NAMES["default_region"])
+        ec2 = boto3.client("ec2", region_name=region)
+        for instance in ec2ops.find_nodes(ec2):
+            ec2ops.terminate(ec2, instance["InstanceId"])
         return _respond(200, dict(statusdoc.ABSENT))
 
     ec2 = boto3.client("ec2", region_name=pointer.region)
@@ -190,8 +210,22 @@ def _up(control_ssm, body: dict) -> dict:
 
     # Regional, so it does not close the global window — but it eliminates the
     # common double-tap-in-the-same-region case before spending money.
-    if ec2ops.find_nodes(ec2):
-        return _respond(200, _describe(control_ssm, settings.Pointer(region, "")))
+    found = ec2ops.find_nodes(ec2)
+    if found:
+        # The pointer may be stale or absent here — e.g. a prior launch's
+        # write_pointer failed after RunInstances already succeeded. Repair
+        # it before returning: an unrepaired pointer is exactly what lets a
+        # later `down` report success while this node keeps running and
+        # billing (read_pointer returns None, so `_down` would otherwise
+        # take its early "nothing to do" return without ever calling
+        # terminate).
+        found_id = found[0]["InstanceId"]
+        settings.write_pointer(
+            control_ssm,
+            settings.PARAM_NAMES["current_node"],
+            settings.Pointer(region=region, instance_id=found_id),
+        )
+        return _respond(200, _describe(control_ssm, settings.Pointer(region, found_id)))
 
     hostname = f"shardvpn-{region}-{secrets.token_hex(2)}"
     authkey = tailscale.mint_auth_key(
