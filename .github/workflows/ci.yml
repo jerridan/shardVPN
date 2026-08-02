@@ -39,3 +39,31 @@ jobs:
         working-directory: terraform
       - run: terraform validate
         working-directory: terraform
+
+  scan:
+    runs-on: ubuntu-latest
+    # gitleaks-action calls the Pulls API to fetch the commit range to scan
+    # and, on a leak, to comment on the PR; both need write, which the
+    # job-level block grants without widening the other jobs' read-only
+    # default above.
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # gitleaks-action diffs baseRef^..headRef; a shallow clone (the
+          # checkout default) doesn't contain that history, so full depth is
+          # required or the scan silently covers the wrong range.
+          fetch-depth: 0
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: terraform
+          exit-code: '1'
+      - uses: gitleaks/gitleaks-action@v3.0.0
+        env:
+          # Required since a recent gitleaks-action update: v3 refuses to
+          # scan pull requests without it (unrelated to AWS credentials —
+          # this is the ephemeral, auto-issued GitHub Actions token).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
