@@ -89,6 +89,30 @@ def test_find_device_handles_devices_without_a_tags_key():
         assert find_device("tok", TAG) is None
 
 
+def test_find_device_falls_back_to_the_only_tagged_device_when_hostname_does_not_match():
+    # The hostname we asked for didn't round-trip, but there is exactly one
+    # tagged device, so there is no ambiguity about which one is ours.
+    devices = {"devices": [{"id": "1", "hostname": "something-else", "tags": [TAG]}]}
+    with patch("shardvpn.tailscale.urlopen") as opener:
+        opener.return_value.__enter__.return_value = fake_response(devices)
+        assert find_device("tok", TAG, hostname="shardvpn-new")["id"] == "1"
+
+
+def test_find_device_returns_none_when_hostname_does_not_match_and_several_are_tagged():
+    # Two tagged devices and neither matches the requested hostname: this is
+    # the stale-node-during-a-region-switch case. We cannot tell which
+    # device is ours, so we must not guess.
+    devices = {
+        "devices": [
+            {"id": "1", "hostname": "shardvpn-old", "tags": [TAG]},
+            {"id": "2", "hostname": "something-else-entirely", "tags": [TAG]},
+        ]
+    }
+    with patch("shardvpn.tailscale.urlopen") as opener:
+        opener.return_value.__enter__.return_value = fake_response(devices)
+        assert find_device("tok", TAG, hostname="shardvpn-new") is None
+
+
 def test_uses_the_dash_tailnet_alias_never_a_name():
     with patch("shardvpn.tailscale.urlopen") as opener:
         opener.return_value.__enter__.return_value = fake_response({"devices": []})
