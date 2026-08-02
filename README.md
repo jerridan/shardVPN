@@ -1,181 +1,249 @@
-# ShardVPN
-This tool allows for the temporary creation of a VPN server. You can create it, use it for however long you need, and 
-then promptly destroy it.
+# shardVPN
 
-ShardVPN has only been tested on macOS, and may or may not work as expected with other operating systems.
-It is still under development, and may change drastically over time.
+A personal, on-demand Tailscale exit node on EC2, triggered from an iPhone.
+Nothing runs, and nothing costs anything, between trips.
 
-ShardVPN is named for the Shards in Brandon Sanderson's series _The Stormlight Archive_.
+ShardVPN is named for the Shards in Brandon Sanderson's series
+_The Stormlight Archive_.
+
 > Ten heartbeats.
 > <br/>
 > _One_.
 > <br/>
-> That was how long it took to summon a Shardblade. If Dalinar's heart was racing, the time was shorter. If he was 
-> relaxed, it took longer. _Two_.
+> That was how long it took to summon a Shardblade. If Dalinar's heart was
+> racing, the time was shorter. If he was relaxed, it took longer. _Two_.
 
 \- _The Way of Kings_ by Brandon Sanderson, p. 202.
 
-## Contents
-- [Dependencies](#dependencies)
-  - [Setting up AWS Credentials](#setting-up-aws-credentials)
-  - [Installing Terraform](#installing-terraform)
-  - [Setting up the Key Pair](#setting-up-the-key-pair)
-- [Using ShardVPN](#using-shardvpn)
-  - [Running ShardVPN](#running-shardvpn)
-  - [Stopping ShardVPN](#stopping-shardvpn)
-- [Security](#security)
-- [Troubleshooting](#troubleshooting)
+## What this is
 
-## Dependencies
-Before you are able to use ShardVPN, you will need to have the following required dependencies.
-1. A copy of this repository on your local machine
-1. An AWS account, with the proper credentials (see [Setting up AWS Credentials](#setting-up-aws-credentials))
-1. Terraform installed on your local machine (see [Installing Terraform](#installing-terraform))
-1. An RSA key pair stored on your local machine at `~/.ssh/terraform_rsa`
-(see [Setting up the Key Pair](#setting-up-the-key-pair))
+Three actions — `up`, `down`, `status` — sent from a phone, over HTTPS, to a
+Lambda that is the entire control plane. `up` launches a bare Amazon Linux
+2023 instance that turns itself into a Tailscale exit node with no inbound
+ports before it ever advertises itself as selectable; `down` tears it down
+and removes it from the tailnet; `status` reports what's currently running.
+An hourly sweep is the only thing that runs unattended — it reaps anything
+past its TTL, kills duplicate nodes, and emails you if a node has gone
+untouched for 24 hours, in case you forgot about it.
 
-### Setting up AWS Credentials
-ShardVPN uses Terraform to create, set up, and tear down the necessary AWS resources on which the VPN runs. Terraform
- can only operate with the resources on your account that you grant it access to. At this time, the following 
- permissions are required:
- - AmazonS3FullAccess
- - AmazonEC2FullAccess
- - IAMFullAccess
- - CloudWatchLogsFullAccess
- - AmazonEC2ContainerServiceFullAccess
- 
-In the end, your local AWS credentials file must grant ShardVPN the above permissions. I recommend setting up
-  these permissions in the following manner:
-  1. Go to the IAM service in your AWS account.
-  1. Create a user. You may name it whatever you like.
-  1. Create a group. You may name this whatever you like, but I recommend giving it an identifiable name, like 
-  'shard_vpn'.
-  1. Assign the user to the group.
-  1. In the group, attach the permission policies listed above.
-  1. In the user, go to the 'Security Credentials' page and create an access key.
-  1. Open your local AWS credentials file at `~/.aws/credentials`. If you do not yet have this file, create it. You can
-  learn more about this [here](https://docs.aws.amazon.com/cli/latest/userguide/cli-config-files.html).
-  1. Include the credentials you created under a profile for ShardVPN, like so: 
-      ```
-      [shard_vpn]
-      aws_access_key_id = YOUR_AWS_ACCESS_KEY_ID
-      aws_secret_access_key = YOUR_AWS_SECRET_ACCESS_KEY
-      ```
-      Note: If you want to name the profile something else, you can - but you must change the `aws_credentials_profile` variable
-      in `settings.tfvars`, in the main repository folder. 
+This is v2. v1 (Terraform 0.11, OpenVPN, a hand-run certificate authority,
+manual SSH provisioning) is gone from this repository and lives only in git
+history on `master`. If you ran v1, its AWS resources almost certainly still
+exist — see step 1 below before doing anything else.
 
-### Installing Terraform
-On macOS, I find using Homebrew to be the easiest way to install Terraform: 
+## One-time setup
+
+Do these in order. Steps 1–4 are infrastructure; steps 5–6 wire up Tailscale
+and the phone.
+
+### 1. Decommission v1 — do this first
+
+**If you ever ran this repo's v1, do this before anything else.** Until it is
+done, the security posture described further down is not the one you have.
+v1's setup instructions had you create an IAM user
+carrying `IAMFullAccess`, `AmazonEC2FullAccess` and `AmazonS3FullAccess`,
+plus a long-lived access key in `~/.aws/credentials`. That user, its key,
+and an S3 bucket named `shard-vpn-keys` still exist in your account until
+you remove them — the shell scripts that knew how to tear v1 down were
+deleted along with the rest of v1's code, so this has to happen with
+plain AWS CLI / console commands, not this repo's tooling.
+
+```bash
+# Find what v1 left behind
+aws iam list-users --query 'Users[?contains(UserName, `shard`)].UserName'
+aws s3 ls | grep shard-vpn
+aws ec2 describe-instances --region ca-central-1 \
+  --filters "Name=tag:Name,Values=ShardVPNDrive,ShardVPNCertifier" \
+  --query 'Reservations[].Instances[].[InstanceId,State.Name]' --output table
+
+# Remove the IAM user and its access key
+aws iam list-access-keys --user-name <v1-user>
+aws iam delete-access-key --user-name <v1-user> --access-key-id <key-id>
+aws iam list-attached-user-policies --user-name <v1-user>
+# detach each policy and remove from any group, then:
+aws iam delete-user --user-name <v1-user>
+
+# Remove the bucket, and any lingering instances found above
+aws s3 rb s3://shard-vpn-keys --force
 ```
-brew install terraform
+
+Then delete the corresponding profile block from `~/.aws/credentials`.
+Confirm clean: no `shard`-named IAM user, no `shard-vpn-keys` bucket, no
+running v1 instances. Nothing about v2 is true — "no long-lived AWS access
+keys anywhere" specifically — until this is done.
+
+### 2. `terraform apply`
+
+All tooling runs through **[uv](https://docs.astral.sh/uv/)**. Terraform
+itself now installs from HashiCorp's own tap, not homebrew-core:
+
+```bash
+brew install hashicorp/tap/terraform
 ```
-Otherwise, see https://www.terraform.io/ for installation instructions.
 
-### Setting up the Key Pair
-At one point, Terraform needs to SSH into an EC2 instance in order to upload and run a script. It does this using an 
-RSA key. The key pair must be stored on your local system at `~/.ssh/terraform_rsa`. If you need instructions for 
-generating this key, I have always found
-[this link](https://help.github.com/articles/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent/#generating-a-new-ssh-key)
-to be helpful.
+```bash
+cd terraform
+cp terraform.tfvars.example terraform.tfvars
+# edit terraform.tfvars: set notification_email
+terraform init
+terraform apply
+```
 
+This creates the Lambda, its Function URL, the EventBridge Scheduler rule,
+the SNS topic, the SSM parameters (with placeholder values for the three
+secrets — see step 3), and the CloudWatch alarms and budget.
 
-## Using ShardVPN
+**A brand-new AWS account may fail this apply.** The Lambda is deployed
+with `reserved_concurrent_executions = 1`, and AWS enforces that reserving
+concurrency for one function cannot push your account's *unreserved*
+concurrent-execution pool below 100. A freshly created account can start
+below that floor. If `apply` fails on this, request a service-quota increase
+for Lambda concurrent executions in the target region before retrying.
 
-### Running ShardVPN
-Once you have all of the dependencies set up, you can run ShardVPN as follows:
-1. Navigate to the main ShardVPN folder.
-1. If you are running ShardVPN for the first time, run `initialize_terraform.sh`.
-1. Run `build_vpn_from_scratch.sh`.
-1. Once the script has finished running, go to the S3 service in your AWS account.
-1. In the 'shard-vpn-keys' bucket, you will see a number of files. Once your VPN server has initialized, a file with 
-the 
-name `shard-vpn-client.ovpn` will appear. This takes ~3 minutes. 
-1. Download the `shard-vpn-client.ovpn` file.
-1. Use the `shard-vpn-client.ovpn` file with your favourite OpenVPN-compatible VPN software to establish a connection with the 
-server.
-    - If you are using macOS, I recommend [Tunnelblick](https://tunnelblick.net/)
-1. Presto! You should now be connected to your own private VPN server!
+`terraform output function_url` gives you the value the phone client needs
+in step 6. Keep it out of commits, issues, and screenshots — see Security
+posture below.
 
-#### More about the `build_vpn_from_scratch.sh` script
-This script does the following:
-1. Runs `terraform apply` from the main folder, which create the S3 bucket where the certificates and keys are stored.
-1. Runs `terraform apply` from the folder `certifier`, which creates an EC2 instance that generates all of the 
-necessary keys and certificates required for a client - server VPN connection.
-1. Runs `terraform destroy` from the folder `certifier` to tear down that EC2 server, as it is no longer needed.
-1. Runs `terraform apply` from the folder `drive`, which creates the VPN server that your local machine will connect
- to.
- 
-If you wish, you may run these commands manually to achieve the same result. You can even SSH into the servers yourself 
-using the RSA key you 
-generated, if you want to have a look around.
+### 3. Populate the SecureString parameters out of band
 
-### Settings
-In the root folder, there is a `settings.tfvars` file where user settings may be defined.
-At this point, the following settings may be defined:
-- `aws_credentials_profile`
-  - The profile in your aws credentials file that ShardVPN should use
-- `traffic_protocol`
-  - The protocol (udp or tcp) that you want ShardVPN to use. Default: udp
-  - UDP protocol will use port 1194, while TCP will use port 443
+Terraform deliberately does *not* set real values for the three secret SSM
+parameters — `aws_ssm_parameter` stores its value in Terraform state **in
+plaintext even for `SecureString`**, so committing that value to state would
+defeat the point of the type. Set them directly instead:
 
-### Stopping ShardVPN
-1. If you started ShardVPN using the `build_vpn_from_scratch.sh` script, then run `destroy_drive.sh` from the main folder.
+```bash
+aws ssm put-parameter --name /shardvpn/tailscale-client-id \
+  --type SecureString --value '<id>' --overwrite
+aws ssm put-parameter --name /shardvpn/tailscale-client-secret \
+  --type SecureString --value '<secret>' --overwrite
+aws ssm put-parameter --name /shardvpn/signing-secret --type SecureString \
+  --value "$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')" --overwrite
+```
 
-#### More about the `destroy_drive.sh` script
-This script does the following:
-1. Runs `terraform destroy` from the main folder, to remove the 'shard-vpn-keys' bucket.
-1. Runs `terraform destroy` from the folder `drive`, which tears down the VPN server.
+The Tailscale client ID and secret come from step 5 below; do that first if
+you're following this list top to bottom, or come back here after.
 
-If you wish, you may run these commands manually to achieve the same result.
+### 4. Confirm the SNS email subscription
 
-## Security
-Below are some of the security measures that ShardVPN is built with.
+`terraform apply` creates an email subscription to the notifications topic
+but AWS requires a one-time confirmation click. Check the inbox for the
+address you set as `notification_email` and confirm it — until you do, idle
+alerts, orphan-node alerts, and the CloudWatch/budget alarms all go nowhere.
 
-**Separation of the Certificate Authority from the VPN server**
+### 5. Tailnet setup
 
-The Certificate Authority (CA) is used to sign the server and client keys and certificates. This identifies them as 
-trustworthy (i.e. the server knows the client is trustworthy, and vice versa). If an outside source were to gain 
-access to the CA key, new keys could be generated to gain access to the VPN.
+One-time, done by hand in the Tailscale admin console: tagging, an OAuth
+client, auto-approval for exit-node advertisement, and an SSH grant. See
+[`docs/tailnet-setup.md`](docs/tailnet-setup.md).
 
-In order to mitigate this risk, once the keys and certificates are generated, the certifier server, which contains 
-the CA key, is torn down. No further keys or certificates can be generated at this point beyond what has been placed 
-in the S3 bucket.
+### 6. Phone setup
 
-Note that while there is a CA certificate placed in the S3 bucket, this is NOT the CA key. The CA certificate is only 
-used to verify that other certificates were signed by the CA key, and cannot itself sign anything.
+Install Scriptable, add the client script, wire up three Shortcuts. See
+[`docs/ios-shortcut.md`](docs/ios-shortcut.md).
 
-**SHA256 Authentication of all Data**
+## Daily use
 
-All data packets passing between the ShardVPN client and server are signed and authenticated using the SSL SHA-256 
-cryptographic hash algorithm. 
+Tap a home-screen shortcut:
 
-**SHA256 Encryption of all Control Channel Packets**
+- **Up** — launches a node in the default region (or send a custom region /
+  TTL by editing the script's action, if you need that). Usually selectable
+  as an exit node on your devices within a couple of minutes.
+- **Status** — current state, region, public IP, whether it's on the
+  tailnet yet, how long it's been idle.
+- **Down** — terminates the node and removes it from the tailnet.
 
-A control channel packet is a packet of data sent between the client and server during the initial connection and 
-later shutdown phases.
+Calling `up` while a node is already running just returns that node — it's
+idempotent, not an error. `down` with nothing running is a no-op. Forgetting
+to call `down` costs about $0.52/day and gets you an email after 24 hours of
+inactivity; nothing terminates it for you unless you set a TTL.
 
-All control channel packets are encrypted using a SSL SHA-256 hash algorithm in order to mask their contents. This 
-helps to prevent Man-in-the-Middle attacks, and also helps to keep these packets from being identified as being part
-of a VPN.
+## Cost
 
-**Encryption of all Data Channel Packets**
+Nothing runs between trips.
 
-A data channel packet is any packet of data sent over the VPN after a connection has been initialized.
+| Item | Cost |
+|---|---|
+| `t4g.small` (while a node is up) | $0.0168/hr |
+| Public IPv4 (while a node is up) | $0.005/hr |
+| **Running total while a node is up** | **$0.0218/hr ≈ $0.52/day ≈ $3.67/week** |
+| Lambda, EventBridge Scheduler, SNS, SSM Standard, CloudWatch basic monitoring | $0 at this volume |
 
-All data channel packets are encrypted with one of the following ciphers, in order of descending preference:
-1. AES-256-GCM
-1. AES-128-GCM
-1. AES-256-CBC
+Data egress is the one variable cost. AWS's free tier for data transfer out
+to the internet is currently **100 GB/month**, aggregated across all AWS
+services and regions (confirmed against AWS's EC2 on-demand pricing page,
+not quoted from memory) — normal VPN usage over a weekend trip is well
+under that; sustained heavy transfer is not.
 
-If your OpenVPN software is using OpenVPN 2.4 or higher, AES-256-GCM will be the default. For older versions, 
-AES-256-CBC will be used.
+## Security posture
 
-## Troubleshooting
+This repository is public. The design assumes that and is built around it:
 
-**DNS options are not being set properly**
+- **No long-lived AWS access keys anywhere**, once step 1 above is done.
+  The Lambda's IAM role is scoped tightly: `TerminateInstances` and
+  `RunInstances`'s tagging condition are both bound to
+  `shardvpn:role = exit-node`, `RunInstances` is bound to `t4g.*` instance
+  types, and the only `Resource: "*"` grants are read-only EC2 `Describe*`
+  and CloudWatch `GetMetricStatistics` calls, which don't support
+  resource-level permissions at all.
+- **No secret ever reaches Terraform state or a commit.** The three secret
+  SSM parameters are created with placeholders and `ignore_changes`, and
+  populated out of band (step 3). `.gitignore` excludes `*.tfstate*`,
+  `.terraform/`, and `*.tfvars` (the example file is committed;
+  the real one, carrying your email address, is not).
+- **Authentication is an HMAC signature, not an AWS credential.** The
+  Function URL runs with `authorization_type = "NONE"`; every request is
+  verified inside the handler against a shared signing secret, over the raw
+  request bytes, with a 120-second timestamp window. Every failure — bad
+  signature, missing header, expired timestamp — returns an identical `403`
+  with no detail, so there's no oracle telling an attacker which check
+  failed.
+- **The exit node has zero inbound security group rules.** The only way in
+  is `tailscale ssh`, which requires both an `ssh` grant in the tailnet
+  policy and being on the tailnet in the first place.
+- **The Tailscale OAuth client is read-mostly.** It can mint auth keys
+  tagged `tag:shardvpn-exit` and read device state; it cannot remove or
+  retag any device. A leaked OAuth secret can create noise, not damage — see
+  `docs/tailnet-setup.md` for why read-write `devices:core` is deliberately
+  not granted.
+- **Nothing sensitive is ever logged.** The handler logs exception *types*,
+  never exception messages or tracebacks — botocore's `ParamValidationError`
+  can embed the instance `UserData`, which carries a live (if short-lived
+  and single-use) Tailscale auth key.
+- **The Function URL itself is not secret**, just unguessable and not
+  independently rotatable. Treat it like a password anyway: it stays out of
+  commits, issues, and screenshots.
 
-You must ensure that the client configuration file has permission to manually set network settings on your local 
-machine. This is because ShardVPN will set your machine to use Google's DNS servers.
+### Branch protection
 
-To fix this in Tunnelblick, simply open Tunnelblick, go to "Advanced", and make sure that "Allow changes to 
-manually-set network settings" is selected.
+GitHub setting, not something committed. Under Settings → Branches, add a
+protection rule for `master` requiring the four CI jobs — `python`, `shell`,
+`terraform`, `scan` — to pass before merging, and require branches to be up
+to date before merging. CI itself needs no AWS credentials (every check runs
+`-backend=false`/offline); if that ever changes, use GitHub OIDC into a
+scoped role, not stored keys.
+
+## Running the tests
+
+All Python tooling runs through **uv** — never `pip`, `python -m venv`, or a
+hand-activated `.venv`.
+
+```bash
+uv sync --group dev
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest -v
+```
+
+169 tests, fully offline: `botocore.stub.Stubber` for every AWS call,
+`urlopen` patched for Tailscale, a client factory for the watchdog sweep.
+There is no integration test suite — the real verification is an end-to-end
+run against live AWS and a live tailnet (`curl ifconfig.me` through the node
+from two devices at once), which is inherently manual.
+
+Also checked in CI, if you have the tools locally:
+
+```bash
+cd terraform && terraform init -backend=false && terraform validate
+shellcheck lambda/shardvpn/userdata.sh
+trivy config terraform/
+```
