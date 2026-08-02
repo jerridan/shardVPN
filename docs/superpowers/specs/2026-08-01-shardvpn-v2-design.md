@@ -335,12 +335,31 @@ Order matters and *is* the design:
    termination grace.
 5. `tailscale up --auth-key=${TS_AUTHKEY} --advertise-exit-node --ssh
    --hostname=${TS_HOSTNAME}`.
-6. Assert `/proc/sys/net/ipv4/ip_forward` reads `1`, and that `tailscale
-   status --json` shows the node advertising as an exit node — **in a bounded
-   retry loop**. `tailscale up` returns once authenticated, but the netmap may
-   not yet reflect the advertisement, so a single-shot check would turn a
-   healthy node into a fatal error and become the silent failure it exists to
-   catch. Log loudly on genuine failure.
+6. **Verify before advertising, and fail closed.** `tailscale up` runs
+   *without* `--advertise-exit-node`; forwarding is asserted first; only then
+   is `tailscale set --advertise-exit-node` issued; and the advertisement is
+   confirmed in a **bounded retry loop** (`tailscale up` returns once
+   authenticated, but the netmap may not yet reflect the advertisement, so a
+   single-shot check would fail healthy nodes and become the silent failure it
+   exists to catch).
+
+   On any failure the node **withdraws the advertisement, leaves the tailnet,
+   and shuts down** — it does not merely log. Logging alone leaves an instance
+   that is joined, advertised, billing, and indistinguishable from healthy on
+   the exit-node picker, which is precisely the failure being guarded against;
+   a nonzero cloud-init exit affects nothing on its own, since EC2 health
+   checks are hypervisor-level.
+
+   The confirmation must be scoped to the node's **own `Self` entry**, parsed
+   as JSON rather than grepped across the whole document. An unscoped match
+   is satisfied by *any* peer advertising as an exit node — including the
+   30-60 minute ephemeral remnant of a node this service just replaced during
+   a region switch.
+
+   Because the failure path shuts down, `RunInstances` sets
+   `InstanceInitiatedShutdownBehavior = terminate`: the EBS-backed default is
+   *stop*, and a stopped instance is invisible to the pending/running filter
+   the reaper uses, so it would linger unreaped while EBS billed.
 
 ### 6.3 Auth key handling
 
