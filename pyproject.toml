@@ -3,6 +3,12 @@ name = "shardvpn"
 version = "2.0.0"
 requires-python = ">=3.13"
 
+# Dev tooling only. The Lambda ships with NO third-party dependencies —
+# boto3 comes from the runtime, everything else is stdlib. boto3 is here
+# purely so botocore.stub.Stubber is available to the test suite.
+[dependency-groups]
+dev = ["pytest>=8", "boto3>=1.35", "ruff>=0.16"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["lambda"]

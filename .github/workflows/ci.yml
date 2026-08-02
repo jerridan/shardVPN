@@ -13,13 +13,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@v9
         with:
           python-version: '3.13'
-      - run: pip install pytest boto3 ruff
-      - run: ruff check .
-      - run: ruff format --check .
-      - run: pytest -v
+      # --locked fails rather than silently resolving differently, so CI runs
+      # the exact tool versions uv.lock pins.
+      - run: uv sync --group dev --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -v
 
   shell:
     runs-on: ubuntu-latest
