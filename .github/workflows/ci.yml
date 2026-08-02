@@ -20,3 +20,9 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -v
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: shellcheck lambda/shardvpn/userdata.sh
