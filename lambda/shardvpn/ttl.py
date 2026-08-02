@@ -5,6 +5,11 @@ from datetime import UTC, datetime, timedelta
 
 NEVER = "never"
 
+# Spellings that all mean "no expiry". The stored tag value is 'never'; the
+# SSM default parameter and the JSON request field both use 'none'. Both must
+# parse, or a launch with default configuration returns 400.
+_NO_EXPIRY = frozenset({NEVER, "none"})
+
 _TTL_PATTERN = re.compile(r"\A(\d+)([mhd])\Z")
 _UNIT_SECONDS = {"m": 60, "h": 3600, "d": 86400}
 _MAX_TTL_SECONDS = 365 * 86400
@@ -20,7 +25,7 @@ def parse_rfc3339(value: str) -> datetime:
 
 def parse_ttl(ttl: str | None, now: datetime) -> str:
     """Turn a TTL like '48h' into an absolute expiry, or NEVER."""
-    if ttl is None or ttl == NEVER or ttl == "none":
+    if ttl is None or ttl in _NO_EXPIRY:
         return NEVER
 
     match = _TTL_PATTERN.match(ttl)

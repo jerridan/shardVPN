@@ -21,6 +21,10 @@ def test_literal_none_means_never():
     assert parse_ttl("none", NOW) == NEVER
 
 
+def test_literal_never_means_never():
+    assert parse_ttl("never", NOW) == NEVER
+
+
 def test_hours_ttl():
     assert parse_ttl("48h", NOW) == "2026-08-03T12:00:00Z"
 
