@@ -28,3 +28,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: shellcheck lambda/shardvpn/userdata.sh
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+        working-directory: terraform
+      - run: terraform validate
+        working-directory: terraform
