@@ -111,7 +111,12 @@ if [ "$(cat /proc/sys/net/ipv4/ip_forward)" != "1" ]; then
 fi
 
 echo "shardvpn: advertising as exit node"
-tailscale set --advertise-exit-node
+if ! tailscale set --advertise-exit-node; then
+  echo "shardvpn: FATAL could not advertise as exit node" >&2
+  tailscale logout || true
+  shutdown -h now || true
+  exit 1
+fi
 
 # `tailscale set` returns once accepted, but the netmap may not yet show the
 # advertisement. A single-shot check would fail healthy nodes, turning the
