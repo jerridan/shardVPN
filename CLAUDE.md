@@ -84,6 +84,44 @@ instead) if it's illustrative shell usage rather than a real module.
 - Whether Scriptable Keychain values sync to iCloud is unconfirmed either
   way. Until it's known, assume every device sharing iCloud Keychain with
   the configured phone can control the VPN.
+- Whether `kms:Decrypt` must be granted explicitly for `alias/aws/ssm`.
+  The README's setup step 3 has a `curl` that answers this: `403` means the
+  secret decrypted, `503` means the role needs the grant. Do NOT try to
+  verify by assuming the `shardvpn-lambda` role — its trust policy admits
+  only `lambda.amazonaws.com`, so you get an `AccessDenied` about the wrong
+  thing entirely.
+- `archive_file`'s `excludes = ["**/__pycache__/**"]` was verified against
+  the provider's `doublestar` matching by reading its source, not by a real
+  `terraform apply`. If a stray `.pyc` ever lands in the deployment zip,
+  start there.
+
+## Known and accepted
+
+Findings from the final whole-branch review that were triaged as ship-as-is.
+Recorded so nobody rediscovers them as if they were new:
+
+- **`down` only scans the default region when the SSM pointer is unreadable.**
+  If a launch in a non-default region loses its pointer write, `down` reports
+  `absent` while that node keeps billing. The hourly sweep repairs the pointer
+  within an hour, after which a second `down` works. A full cross-region scan
+  on `down` would close it.
+- **Concurrent `up` requests can still race.** The regional `find_nodes` check
+  runs before two Tailscale round-trips, so two near-simultaneous launches can
+  both pass it. Bounded and self-healing: the sweep terminates all but the
+  newest.
+- **A saturated Function URL is a denial of control.** Reserved concurrency is
+  1, so anyone holding the URL can occupy the slot with junk and stall your
+  own `down`. The `Throttles` alarm fires, and Scheduler retries the sweep.
+- **`find_nodes` filters `pending`/`running`**, so an instance stopped by hand
+  in the console is invisible to both `down` and the sweep while EBS bills.
+  The in-guest path is covered by `InstanceInitiatedShutdownBehavior`.
+- **The unresolved-duplicates case emits two SNS emails** — its own specific
+  message plus the generic failure aggregate.
+- **`tests/test_watchdog.py` uses `MagicMock`, not `Stubber`**, so watchdog AWS
+  calls get no request-shape validation. It is the only module where that is
+  true, and it is the unattended one.
+- **The orphan alert has no debounce.** If `ssm:PutParameter` is denied, it
+  emails hourly, indefinitely.
 
 ## Gotchas
 
