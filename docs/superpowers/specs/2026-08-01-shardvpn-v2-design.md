@@ -445,7 +445,14 @@ Documented in `docs/tailnet-setup.md`, done once by hand:
 **Default is no expiry.** TTL is a per-launch value, not a build-time constant:
 the request may carry `ttl`, the default comes from SSM
 `/shardvpn/default-ttl` (initially `none`), and whatever is used is written to
-the `shardvpn:expires-at` tag. Changing the default later is one
+the `shardvpn:expires-at` tag.
+
+Two spellings mean "no expiry" and both must parse. `none` is the
+configuration and request spelling — the SSM parameter and the JSON `ttl`
+field; `never` is the stored tag value. Accepting only one of them breaks the
+default path: the handler passes the SSM value straight to the TTL parser
+whenever a request omits `ttl`, which is the normal case, so rejecting `none`
+would return `400` on every launch under default configuration. Changing the default later is one
 `aws ssm put-parameter`, not a code change or a re-apply.
 
 The reaping path is built and deployed from day one even though nothing expires
