@@ -26,9 +26,12 @@ def extract_body(event: dict) -> bytes:
     if event.get("isBase64Encoded"):
         try:
             return base64.b64decode(raw, validate=True)
-        except (binascii.Error, ValueError) as exc:
+        except (binascii.Error, ValueError, TypeError) as exc:
             raise AuthError from exc
-    return raw.encode()
+    try:
+        return raw.encode()
+    except (AttributeError, TypeError):
+        raise AuthError from None
 
 
 def verify(
@@ -39,7 +42,10 @@ def verify(
     max_skew: int = MAX_SKEW_SECONDS,
 ) -> None:
     """Raise AuthError unless the request carries a fresh, valid signature."""
-    lowered = {k.lower(): v for k, v in headers.items()}
+    try:
+        lowered = {k.lower(): v for k, v in headers.items()}
+    except (AttributeError, TypeError):
+        raise AuthError from None
 
     raw_ts = lowered.get(TIMESTAMP_HEADER, "")
     provided = lowered.get(SIGNATURE_HEADER, "")
@@ -47,8 +53,11 @@ def verify(
     # Validate shape before parsing. int() accepts whitespace, a leading '+',
     # underscores and non-ASCII digits; compare_digest raises TypeError on any
     # non-ASCII string. Both would break the 'every failure is 403' property.
-    if not _TIMESTAMP_RE.match(raw_ts) or not _SIGNATURE_RE.match(provided):
-        raise AuthError
+    try:
+        if not _TIMESTAMP_RE.match(raw_ts) or not _SIGNATURE_RE.match(provided):
+            raise AuthError
+    except TypeError:
+        raise AuthError from None
 
     if abs(now - int(raw_ts)) > max_skew:
         raise AuthError

@@ -96,3 +96,25 @@ def test_extract_body_handles_absent_body():
 def test_extract_body_raises_authcode_on_malformed_base64():
     with pytest.raises(AuthError):
         extract_body({"body": "!!!not base64!!!", "isBase64Encoded": True})
+
+
+def test_rejects_non_string_header_value():
+    h = headers() | {"x-shardvpn-signature": 12345}
+    with pytest.raises(AuthError):
+        verify(h, BODY, SIGNING_KEY, NOW)
+
+
+def test_rejects_none_header_value():
+    h = headers() | {"x-shardvpn-signature": None}
+    with pytest.raises(AuthError):
+        verify(h, BODY, SIGNING_KEY, NOW)
+
+
+def test_extract_body_raises_autherror_on_non_string_body_plain():
+    with pytest.raises(AuthError):
+        extract_body({"body": 12345, "isBase64Encoded": False})
+
+
+def test_extract_body_raises_autherror_on_non_string_body_base64():
+    with pytest.raises(AuthError):
+        extract_body({"body": 12345, "isBase64Encoded": True})
