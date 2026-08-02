@@ -57,6 +57,20 @@ def test_a_non_ascii_signature_is_403_not_502():
     assert handler.lambda_handler(event, None)["statusCode"] == 403
 
 
+def test_returns_503_when_the_signing_secret_cannot_be_retrieved():
+    # A transient SSM/KMS failure fetching the secret is infrastructure
+    # health, not a verification result, so it must be distinguishable from
+    # both the byte-identical 403 an invalid signature gets and an unhandled
+    # 502.
+    with patch("shardvpn.handler.settings.cached_secret", side_effect=RuntimeError("boom")):
+        response = handler.lambda_handler(signed_event({"action": "status"}), None)
+
+    assert response["statusCode"] == 503
+    assert response["statusCode"] != 403
+    assert response["body"] != "{}"
+    assert json.loads(response["body"]) == {"error": "cannot verify request"}
+
+
 def test_sweep_is_unreachable_over_http():
     response = handler.lambda_handler(signed_event({"action": "sweep"}), None)
     assert response["statusCode"] == 400
@@ -106,6 +120,35 @@ def test_up_returns_the_existing_node_instead_of_launching():
     launch.assert_not_called()
     assert response["statusCode"] == 200
     assert json.loads(response["body"])["instance_id"] == "i-0abc"
+
+
+def test_up_does_not_launch_when_a_node_already_exists_in_the_target_region():
+    # Isolates the regional find_nodes check that runs immediately before
+    # RunInstances, independent of the pointer-driven short-circuit above:
+    # the pointer says nothing is tracked, but a node is already live in the
+    # requested region (e.g. a concurrent request beat this one there). This
+    # is what stands between a double-tap and paying for two instances.
+    existing = {
+        "InstanceId": "i-0existing",
+        "State": {"Name": "running"},
+        "Tags": [{"Key": "shardvpn:launched-at", "Value": "2026-08-01T09:46:00Z"}],
+    }
+    with (
+        patch("shardvpn.handler.settings.read_pointer", return_value=None),
+        patch("shardvpn.handler.ec2ops.valid_regions", return_value=["ca-central-1"]),
+        patch("shardvpn.handler.ec2ops.find_nodes", return_value=[existing]),
+        patch("shardvpn.handler.ec2ops.launch") as launch,
+        patch("shardvpn.handler.ec2ops.network_out", return_value=[]),
+        patch("shardvpn.handler.tailscale.get_token", return_value="tok"),
+        patch("shardvpn.handler.tailscale.find_device", return_value=None),
+    ):
+        response = handler.lambda_handler(
+            signed_event({"action": "up", "region": "ca-central-1", "ttl": "48h"}), None
+        )
+
+    launch.assert_not_called()
+    assert response["statusCode"] == 200
+    assert json.loads(response["body"])["instance_id"] == "i-0existing"
 
 
 def test_up_fails_closed_when_the_pointer_cannot_be_read():

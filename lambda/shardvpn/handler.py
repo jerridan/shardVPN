@@ -41,15 +41,24 @@ def lambda_handler(event: dict, context) -> dict:
 
     control_ssm = boto3.client("ssm", region_name=CONTROL_REGION)
 
+    # Fetching the secret is kept strictly separate from verifying against it.
+    # A transient SSM/KMS failure here is infrastructure health, not a
+    # verification result — an attacker cannot induce an SSM outage, so
+    # returning 503 in this branch leaks nothing about signature validity and
+    # creates no new oracle. It must not surface as an unhandled exception
+    # (Lambda would turn that into a bodyless, indistinguishable-from-broken
+    # 502) nor be folded into the byte-identical 403 an invalid signature
+    # gets.
     try:
-        verify(
-            event.get("headers") or {},
-            extract_body(event),
-            settings.cached_secret(
-                control_ssm, settings.PARAM_NAMES["signing_secret"], time.time()
-            ),
-            int(time.time()),
+        secret = settings.cached_secret(
+            control_ssm, settings.PARAM_NAMES["signing_secret"], time.time()
         )
+    except Exception as exc:
+        log.error("could not retrieve signing secret: %s", type(exc).__name__)
+        return _respond(503, {"error": "cannot verify request"})
+
+    try:
+        verify(event.get("headers") or {}, extract_body(event), secret, int(time.time()))
     except AuthError:
         return dict(FORBIDDEN)
 
