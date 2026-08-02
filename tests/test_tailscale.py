@@ -3,6 +3,7 @@ import json
 from unittest.mock import patch
 
 import pytest
+
 from shardvpn.tailscale import TailscaleError, find_device, get_token, mint_auth_key
 
 TAG = "tag:shardvpn-exit"

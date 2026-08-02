@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 import pytest
+
 from shardvpn.ttl import (
     NEVER,
     format_duration,

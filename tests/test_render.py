@@ -1,4 +1,5 @@
 import pytest
+
 from shardvpn.render import render_userdata
 
 

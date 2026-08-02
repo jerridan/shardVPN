@@ -3,6 +3,7 @@ import hashlib
 import hmac
 
 import pytest
+
 from shardvpn.auth import AuthError, extract_body, verify
 
 SIGNING_KEY = "s3cr3t"
