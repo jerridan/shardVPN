@@ -88,6 +88,13 @@ systemctl enable --now tailscaled
 systemctl enable --now shardvpn-logout.service
 
 echo "shardvpn: joining tailnet"
+# Deliberately unguarded, unlike everything below it: a join failure here is
+# visible without any cleanup. `tailscale status` on this instance reports
+# running/tailnet-absent, and the watchdog's find_nodes still sees the
+# tagged EC2 instance and flags it as an orphan — so the failure surfaces on
+# its own. An advertise failure would not: it would leave a node that looks
+# selectable and healthy while routing nothing, which is why everything from
+# here down fails closed. Do not "fix" this by adding a guard.
 tailscale up \
   --auth-key="${TS_AUTHKEY}" \
   --ssh \
