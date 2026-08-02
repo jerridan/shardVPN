@@ -568,9 +568,18 @@ access keys.
 `alias/aws/ssm` key policy grants account principals via a `kms:ViaService`
 condition — but "probably" is not good enough for something on the
 authentication hot path, where a failure surfaces as an opaque `502`.
-Verification is an explicit deployment step: assume the `shardvpn-lambda` role
-and run `aws ssm get-parameter --with-decryption` against the signing secret.
-Two minutes, and it removes the unknown.
+Verification is an explicit deployment step — but **not** by assuming the
+`shardvpn-lambda` role, which this spec originally proposed and which does not
+work: that role's trust policy admits only `lambda.amazonaws.com`, so a human
+running `sts assume-role` against it gets an `AccessDenied` that has nothing
+to do with KMS.
+
+Verify through the real request path instead. The handler fetches and decrypts
+the signing secret *before* checking the signature, so a deliberately wrong
+signature isolates the KMS step: `403` means the secret decrypted fine and the
+request was correctly rejected; `503` means decryption failed and the role
+needs an explicit `kms:Decrypt` statement scoped to `alias/aws/ssm`. The exact
+command is in the README's setup section.
 
 ### 9.1 Operational safety net
 
