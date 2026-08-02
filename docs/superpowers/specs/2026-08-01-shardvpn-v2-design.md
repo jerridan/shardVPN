@@ -134,10 +134,12 @@ X-ShardVPN-Signature: <hex sha256>
 Verification order, strictly, before any AWS call or JSON parse:
 
 1. Both headers present.
-2. Timestamp matches `^\d{1,11}$` **before** `int()`. Python's `int()` accepts
-   surrounding whitespace, a leading `+`, underscore separators and non-ASCII
-   digits; each would make client and server disagree about the canonical
-   signed message for the same header.
+2. Timestamp matches `^[0-9]{1,11}$` **before** `int()`. Python's `int()`
+   accepts surrounding whitespace, a leading `+`, underscore separators and
+   non-ASCII digits; each would make client and server disagree about the
+   canonical signed message for the same header. The character class must be
+   `[0-9]` and not `\d` — Python's `\d` matches Unicode decimal digits, so it
+   would admit the very Arabic-Indic numerals `int()` then parses happily.
 3. Signature matches `^[0-9a-f]{64}$`. Without this check
    `hmac.compare_digest` raises `TypeError` on a non-ASCII header value,
    producing a `502` where every other bad request produces `403` — exactly
