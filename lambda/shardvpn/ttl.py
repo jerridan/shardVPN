@@ -10,7 +10,10 @@ NEVER = "never"
 # parse, or a launch with default configuration returns 400.
 _NO_EXPIRY = frozenset({NEVER, "none"})
 
-_TTL_PATTERN = re.compile(r"\A(\d+)([mhd])\Z")
+# [0-9], not \d — same reason as auth.py's _TIMESTAMP_RE: Python's \d matches
+# Unicode decimal digits, so \d would accept "٤٨h" or "４８h" and int() would
+# parse them. Input validation should be ASCII-exact everywhere in this repo.
+_TTL_PATTERN = re.compile(r"\A([0-9]+)([mhd])\Z")
 _UNIT_SECONDS = {"m": 60, "h": 3600, "d": 86400}
 _MAX_TTL_SECONDS = 365 * 86400
 

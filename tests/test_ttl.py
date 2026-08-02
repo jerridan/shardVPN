@@ -37,10 +37,24 @@ def test_days_ttl():
     assert parse_ttl("3d", NOW) == "2026-08-04T12:00:00Z"
 
 
-@pytest.mark.parametrize("bad", ["", "48", "h48", "-1h", "0h", "48x", "1.5h", "99999999d"])
+def test_365_days_at_boundary():
+    assert parse_ttl("365d", NOW) == "2027-08-01T12:00:00Z"
+
+
+def test_366_days_exceeds_boundary():
+    with pytest.raises(ValueError):
+        parse_ttl("366d", NOW)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["", "48", "h48", "-1h", "0h", "48x", "1.5h", "99999999d", "٤٨h", "４８h"],
+)
 def test_rejects_malformed_or_absurd_ttl(bad):
     # '99999999d' overflows timedelta; it must raise ValueError like the rest
     # rather than OverflowError, which the handler would not catch.
+    # '٤٨h' and '４８h' use non-ASCII digits (Arabic-Indic and fullwidth) which
+    # \d would match but [0-9] rejects — input validation must be ASCII-exact.
     with pytest.raises(ValueError):
         parse_ttl(bad, NOW)
 
