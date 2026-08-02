@@ -13,7 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v9
+      # Exact version, not @v9: astral-sh/setup-uv publishes only precise tags
+      # (v9.0.0) and minor movers (v7.6) — there is no bare major tag, so @v9
+      # fails to resolve. Verified against the repo's tag list.
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           python-version: '3.13'
       # --locked fails rather than silently resolving differently, so CI runs
