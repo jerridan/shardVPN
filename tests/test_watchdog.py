@@ -2,6 +2,8 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
+from botocore.exceptions import ClientError
+
 from shardvpn import ec2ops
 from shardvpn.watchdog import idle_seconds, should_alert, sweep
 
@@ -82,16 +84,42 @@ def node(instance_id, *, launched, expires="never", alerted=None, state="running
     return {"InstanceId": instance_id, "State": {"Name": state}, "Tags": tags}
 
 
-def make_factory(nodes_by_region, *, pointer_value="none", threshold=THRESHOLD, out_bytes=0):
+def node_without_launched_tag(instance_id, *, expires="never", state="running"):
+    """A tagged exit node missing shardvpn:launched-at entirely.
+
+    Distinct from `node(..., launched="garbage")`: this exercises the
+    "tag absent" branch of _order_survivors rather than the "tag present but
+    unparseable" branch.
+    """
+    tags = [
+        {"Key": ec2ops.TAG_ROLE, "Value": ec2ops.ROLE_VALUE},
+        {"Key": ec2ops.TAG_EXPIRES, "Value": expires},
+    ]
+    return {"InstanceId": instance_id, "State": {"Name": state}, "Tags": tags}
+
+
+def make_factory(
+    nodes_by_region,
+    *,
+    pointer_value="none",
+    pointer_error=None,
+    threshold=THRESHOLD,
+    threshold_error=None,
+    out_bytes=0,
+):
     """Build a client_factory returning MagicMocks wired for the given world."""
     ssm = MagicMock()
-    ssm.get_parameter.side_effect = lambda **kw: {
-        "Parameter": {
-            "Value": str(threshold)
-            if kw["Name"].endswith("idle-threshold-bytes")
-            else pointer_value
-        }
-    }
+
+    def _get_parameter(**kw):
+        if kw["Name"].endswith("idle-threshold-bytes"):
+            if threshold_error is not None:
+                raise threshold_error
+            return {"Parameter": {"Value": str(threshold)}}
+        if pointer_error is not None:
+            raise pointer_error
+        return {"Parameter": {"Value": pointer_value}}
+
+    ssm.get_parameter.side_effect = _get_parameter
     sns = MagicMock()
     clients = {"ssm": ssm, "sns": sns, "ec2": {}, "cloudwatch": MagicMock()}
     clients["cloudwatch"].get_metric_statistics.return_value = {
@@ -216,3 +244,103 @@ def test_sweep_survives_a_region_that_errors():
     factory("ec2", region_name="ca-central-1").describe_instances.side_effect = RuntimeError("nope")
     result = sweep_with(factory)
     assert result["nodes"] == ["i-0ok"]
+
+
+# --- resilience: no single failure may abandon the rest of the cycle -------
+
+
+def test_sweep_continues_when_the_pointer_is_unreadable():
+    error = ClientError({"Error": {"Code": "ThrottlingException", "Message": "x"}}, "GetParameter")
+    factory = make_factory(
+        {"eu-west-1": [node("i-0live", launched="2026-07-30T00:00:00Z")]},
+        pointer_error=error,
+    )
+    result = sweep_with(factory)
+    assert result["nodes"] == ["i-0live"]
+    messages = [c.kwargs["Message"] for c in factory.sns.publish.call_args_list]
+    assert any("could not be checked against the pointer" in m for m in messages)
+    assert not any("rotate the signing secret" in m for m in messages)
+    factory.ssm.put_parameter.assert_not_called()
+
+
+def test_sweep_survives_a_terminate_failure_and_still_reconciles():
+    factory = make_factory(
+        {
+            "ca-central-1": [
+                node("i-0fails", launched="2026-07-01T00:00:00Z", expires="2026-07-02T00:00:00Z")
+            ],
+            "eu-west-1": [
+                node("i-0reaps", launched="2026-07-01T00:00:00Z", expires="2026-07-02T00:00:00Z")
+            ],
+        },
+        pointer_value='{"region":"ca-central-1","instance_id":"i-0fails"}',
+    )
+    factory("ec2", region_name="ca-central-1").terminate_instances.side_effect = RuntimeError(
+        "throttled"
+    )
+    result = sweep_with(factory)
+    assert result["reaped"] == ["i-0reaps"]
+    assert any("terminate i-0fails" in f for f in result["failures"])
+    # Reconciliation still ran despite the isolated terminate failure: the
+    # stale pointer (pointing at a node this sweep tried and failed to reap)
+    # is still cleared, because no survivor remains regardless.
+    factory.ssm.put_parameter.assert_called_once()
+    assert factory.ssm.put_parameter.call_args.kwargs["Value"] == "none"
+
+
+def test_sweep_refuses_to_pick_a_newest_when_a_launch_tag_is_missing():
+    missing = node_without_launched_tag("i-0missing")
+    dated = node("i-0dated", launched="2026-07-30T00:00:00Z")
+    factory = make_factory({"ca-central-1": [missing], "eu-west-1": [dated]})
+    result = sweep_with(factory)
+    assert result["duplicates"] == []
+    factory.ec2["ca-central-1"].terminate_instances.assert_not_called()
+    factory.ec2["eu-west-1"].terminate_instances.assert_not_called()
+    messages = [c.kwargs["Message"] for c in factory.sns.publish.call_args_list]
+    assert any("launch time could not be determined" in m for m in messages)
+
+
+def test_sweep_refuses_to_pick_a_newest_when_a_launch_tag_is_malformed():
+    malformed = node("i-0garbage", launched="not-a-timestamp")
+    dated = node("i-0dated", launched="2026-07-30T00:00:00Z")
+    factory = make_factory({"ca-central-1": [malformed], "eu-west-1": [dated]})
+    result = sweep_with(factory)
+    assert result["duplicates"] == []
+    factory.ec2["ca-central-1"].terminate_instances.assert_not_called()
+    factory.ec2["eu-west-1"].terminate_instances.assert_not_called()
+
+
+def test_sweep_does_not_clear_the_pointer_over_an_unresolved_duplicate_set():
+    missing = node_without_launched_tag("i-0missing")
+    dated = node("i-0dated", launched="2026-07-30T00:00:00Z")
+    factory = make_factory(
+        {"ca-central-1": [missing], "eu-west-1": [dated]},
+        pointer_value='{"region":"eu-west-1","instance_id":"i-0dated"}',
+    )
+    sweep_with(factory)
+    # Ambiguous — must not guess by clearing or rewriting the pointer either.
+    factory.ssm.put_parameter.assert_not_called()
+
+
+def test_sweep_continues_without_alerting_when_the_threshold_is_unreadable():
+    factory = make_factory(
+        {"ca-central-1": [node("i-0idle", launched="2026-07-30T00:00:00Z")]},
+        threshold_error=RuntimeError("ssm down"),
+    )
+    result = sweep_with(factory)
+    assert result["alerted"] == []
+    assert any("idle-threshold-bytes" in f for f in result["failures"])
+    # Reconciliation still ran despite the unreadable threshold.
+    factory.ssm.put_parameter.assert_called_once()
+
+
+def test_sweep_aborts_without_reconciling_when_region_discovery_fails():
+    factory = make_factory({})
+    factory("ec2", region_name="ca-central-1").describe_regions.side_effect = RuntimeError(
+        "ec2 down"
+    )
+    result = sweep_with(factory)
+    assert result["regions_scanned"] == 0
+    assert result["nodes"] == []
+    assert any("valid_regions" in f for f in result["failures"])
+    factory.ssm.put_parameter.assert_not_called()
