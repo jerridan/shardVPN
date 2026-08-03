@@ -69,11 +69,11 @@ instead) if it's illustrative shell usage rather than a real module.
 
 ## Open
 
-- The exact `tailscale status --json` key for exit-node advertisement
-  (`Self.ExitNodeOption`, checked in `userdata.sh`) is an **unverified
-  guess**, pending live end-to-end testing. If a node advertises correctly
-  but the cloud-init verification loop still times out and shuts it down,
-  check this key first against real `tailscale status --json` output.
+- ~~The exact `tailscale status --json` key for exit-node advertisement.~~
+  **Resolved 2026-08-03: `ExitNodeOption` is correct.** Confirmed two ways on
+  the first live launch — the node did not self-terminate (the verification
+  loop passed), and real output shows `ExitNodeOption: True` alongside
+  `Tags: ['tag:shardvpn-exit']`.
 - The idle threshold in `/shardvpn/idle-threshold-bytes` (currently a
   round-number default) is a guess pending measurement of real idle
   `NetworkOut` during an end-to-end run.
