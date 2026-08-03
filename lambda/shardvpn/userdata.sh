@@ -7,6 +7,19 @@
 # starts, or the node advertises itself and silently routes nothing.
 set -euo pipefail
 
+# Everything from here through the tailnet join has no fail-closed handling
+# of its own: a non-zero exit from, say, `dnf install` or
+# `systemctl enable --now shardvpn-gro.service` (which fails whenever
+# rx-udp-gro-forwarding is unsupported on the attached NIC) would otherwise
+# abort cloud-init under `set -e` and leave the instance running and billing
+# with nothing to reap it — the pointer is already written by the time
+# RunInstances returns, so the watchdog sees it as tracked, TTL defaults to
+# no expiry, and the young-node guard suppresses the idle alert for 24h.
+# Disabled below once the tailnet join begins: that section already fails
+# closed on its own terms (see the comment above `tailscale up`) and this
+# trap must not double-fire across it.
+trap 'echo "shardvpn: FATAL bootstrap failed before tailnet join" >&2; shutdown -h now' ERR
+
 exec > >(tee /var/log/shardvpn-init.log) 2>&1
 
 echo "shardvpn: enabling IP forwarding"
@@ -86,6 +99,11 @@ UNIT
 systemctl daemon-reload
 systemctl enable --now tailscaled
 systemctl enable --now shardvpn-logout.service
+
+# Bootstrap is done; from here down every failure path already fails closed
+# on its own terms (logout + shutdown), so the generic trap above must step
+# aside rather than double-fire alongside them.
+trap - ERR
 
 echo "shardvpn: joining tailnet"
 # Deliberately unguarded, unlike everything below it: a join failure here is

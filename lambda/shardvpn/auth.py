@@ -62,8 +62,13 @@ def verify(
     if abs(now - int(raw_ts)) > max_skew:
         raise AuthError
 
+    # Sign raw_ts verbatim, not str(int(raw_ts)): _TIMESTAMP_RE permits
+    # leading zeros ("01700000000"), which int() silently normalises away.
+    # Re-serializing here would make the server verify a different message
+    # than the client signed — a leading-zero timestamp would always 403,
+    # indistinguishable from any other bad request.
     expected = hmac.new(
-        secret.encode(), f"{int(raw_ts)}.".encode() + raw_body, hashlib.sha256
+        secret.encode(), f"{raw_ts}.".encode() + raw_body, hashlib.sha256
     ).hexdigest()
 
     if not hmac.compare_digest(expected, provided):

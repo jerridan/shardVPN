@@ -8,8 +8,17 @@ resource "aws_sns_topic_subscription" "email" {
   endpoint  = var.notification_email
 }
 
-# CloudWatch alarms and AWS Budgets both publish to this topic, so it must
-# accept them as principals.
+# CloudWatch alarms publish to this topic; AWS Budgets does not — alarms.tf's
+# aws_budgets_budget notifies via subscriber_email_addresses directly and
+# never references this topic, so budgets.amazonaws.com has no reason to be
+# a principal here.
+#
+# The topic ARN is a non-sensitive Terraform output (see outputs.tf), so
+# without the aws:SourceAccount condition below, anyone who learns it could
+# point a CloudWatch alarm in their own account at it and inject text into
+# the one channel this system uses to tell the owner a node is still
+# billing. iam.tf's scheduler role guards against the identical
+# confused-deputy class the same way.
 data "aws_iam_policy_document" "notifications" {
   statement {
     actions   = ["SNS:Publish"]
@@ -17,7 +26,13 @@ data "aws_iam_policy_document" "notifications" {
 
     principals {
       type        = "Service"
-      identifiers = ["cloudwatch.amazonaws.com", "budgets.amazonaws.com"]
+      identifiers = ["cloudwatch.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [local.account]
     }
   }
 }

@@ -246,6 +246,30 @@ def test_sweep_survives_a_region_that_errors():
     assert result["nodes"] == ["i-0ok"]
 
 
+def test_sweep_does_not_clear_the_pointer_when_a_region_scan_fails():
+    # The pointer tracks eu-west-1, eu-west-1's scan raises, and the other
+    # region (ca-central-1) comes back clean and empty. Naively this looks
+    # like "no nodes anywhere", but a scan failure means eu-west-1's absence
+    # was never actually confirmed — the tracked node could still be sitting
+    # there. Clearing the pointer here is what let a later `down` scan only
+    # the default region, report "absent", and leave the real node billing
+    # indefinitely. This is deliberately the *other* half of
+    # test_sweep_survives_a_region_that_errors, which puts the live node in
+    # the region that does NOT error and so never exercises this path.
+    factory = make_factory(
+        {},
+        pointer_value='{"region":"eu-west-1","instance_id":"i-0live"}',
+    )
+    factory("ec2", region_name="eu-west-1").describe_instances.side_effect = RuntimeError(
+        "throttled"
+    )
+    result = sweep_with(factory)
+    factory.ssm.put_parameter.assert_not_called()
+    assert any("eu-west-1" in f for f in result["failures"])
+    messages = [c.kwargs["Message"] for c in factory.sns.publish.call_args_list]
+    assert any("sweep completed with failures" in m for m in messages)
+
+
 # --- resilience: no single failure may abandon the rest of the cycle -------
 
 

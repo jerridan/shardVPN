@@ -80,3 +80,33 @@ def test_verifies_forwarding_before_advertising_exit_node():
 
 def test_advertisement_retry_loop_is_bounded():
     assert "seq 1 15" in render_userdata("k", "h")
+
+
+def test_err_trap_is_set_before_the_first_dnf_call():
+    # Without this trap, a non-zero exit from an early command (dnf install,
+    # dnf config-manager --add-repo, systemctl enable --now
+    # shardvpn-gro.service) aborts cloud-init under `set -e` with the
+    # instance left running and billing — the pointer is already written, so
+    # nothing else in the system notices. It must be armed before the first
+    # fallible command, not somewhere later in the script.
+    out = render_userdata("k", "h")
+    assert "shutdown -h now' ERR" in out
+    # "trap '" (with the opening quote) is unique to the ERR-trap assignment
+    # itself; the bare word "trap" and "dnf install" (without "-y") also
+    # appear in prose comments elsewhere in the file, so a looser search
+    # would false-positive on those instead of the real statements.
+    trap_index = out.index("trap '")
+    first_dnf_command_index = out.index("dnf install -y dnf-plugins-core")
+    assert trap_index < first_dnf_command_index
+
+
+def test_err_trap_is_disabled_before_the_tailnet_join():
+    # The join and verification steps below already fail closed on their own
+    # terms (logout + shutdown); the generic bootstrap trap must not also
+    # fire across them. "tailscale up \" (with the line continuation) is
+    # unique to the actual join command; bare "tailscale up" also appears in
+    # prose comments both above and below it.
+    out = render_userdata("k", "h")
+    disable_index = out.index("trap - ERR")
+    join_index = out.index("tailscale up \\")
+    assert disable_index < join_index

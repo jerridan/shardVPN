@@ -61,11 +61,16 @@ def lambda_handler(event: dict, context) -> dict:
     # writes a real value itself; if the out-of-band `aws ssm put-parameter`
     # step was never run, the "secret" is a literal committed to this public
     # repo and anyone with the Function URL could compute a valid signature.
-    # Reuses the existing 503 path (infrastructure not ready, not a
-    # verification result) rather than inventing a new response shape.
+    # Fails closed via the same 503 status as a KMS/SSM failure above
+    # (infrastructure not ready, not a verification result), but with a
+    # distinct log line and a distinct body: an attacker cannot induce this
+    # branch, and it reveals only that setup is incomplete, which this public
+    # repo's source already tells them — so distinguishing it from a real
+    # kms:Decrypt failure costs nothing and stops the README's verification
+    # step from misdiagnosing this case as a missing IAM grant.
     if secret == settings.PLACEHOLDER_SIGNING_SECRET:
-        log.error("signing secret has not been populated; refusing to verify requests")
-        return _respond(503, {"error": "cannot verify request"})
+        log.error("signing secret is still the placeholder; refusing to verify requests")
+        return _respond(503, {"error": "signing secret not configured"})
 
     try:
         verify(event.get("headers") or {}, extract_body(event), secret, int(time.time()))
@@ -118,7 +123,19 @@ def _describe(control_ssm, pointer) -> dict:
     if not nodes:
         return dict(statusdoc.ABSENT)
 
+    # With an unresolved duplicate sitting in the region, DescribeInstances
+    # ordering is arbitrary — nodes[0] could be the untracked node instead of
+    # the one the pointer actually tracks, so the response would carry the
+    # wrong public_ip/hostname and the tailnet lookup below would run against
+    # the wrong device. Select the node the pointer names; fall back to
+    # nodes[0] only when there is no id to match (empty instance_id) or no
+    # node matches it.
     instance = nodes[0]
+    if pointer.instance_id:
+        for candidate in nodes:
+            if candidate["InstanceId"] == pointer.instance_id:
+                instance = candidate
+                break
     now = datetime.now(UTC)
 
     online = None
@@ -238,15 +255,27 @@ def _up(control_ssm, body: dict) -> dict:
         return _respond(200, _describe(control_ssm, settings.Pointer(region, found_id)))
 
     hostname = f"shardvpn-{region}-{secrets.token_hex(2)}"
+
+    # Resolve every fallible call first. ensure_security_group in particular
+    # raises a deliberate, repeatable RuntimeError when someone hand-added an
+    # ingress rule, so minting before this point would leave a fresh,
+    # pre-authorized, ephemeral auth key live for KEY_EXPIRY_SECONDS with
+    # nothing to revoke it — and every retry against the same broken group
+    # would mint another orphan key. Mint only once nothing left before
+    # run_instances can fail.
+    ami = ec2ops.resolve_ami(boto3.client("ssm", region_name=region))
+    instance_type = settings.get_parameter(control_ssm, settings.PARAM_NAMES["instance_type"])
+    sg_id = ec2ops.ensure_security_group(ec2)
+
     authkey = tailscale.mint_auth_key(
         _tailscale_token(control_ssm), TS_TAG, KEY_EXPIRY_SECONDS, f"shardvpn {hostname}"
     )
 
     instance_id = ec2ops.launch(
         ec2,
-        ami=ec2ops.resolve_ami(boto3.client("ssm", region_name=region)),
-        instance_type=settings.get_parameter(control_ssm, settings.PARAM_NAMES["instance_type"]),
-        sg_id=ec2ops.ensure_security_group(ec2),
+        ami=ami,
+        instance_type=instance_type,
+        sg_id=sg_id,
         user_data=render_userdata(authkey, hostname),
         tags={
             "Name": hostname,

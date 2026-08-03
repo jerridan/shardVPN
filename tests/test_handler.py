@@ -86,7 +86,27 @@ def test_returns_503_when_the_signing_secret_is_still_the_placeholder():
         response = handler.lambda_handler(signed_event({"action": "status"}), None)
 
     assert response["statusCode"] == 503
-    assert json.loads(response["body"]) == {"error": "cannot verify request"}
+    assert json.loads(response["body"]) == {"error": "signing secret not configured"}
+
+
+def test_placeholder_secret_and_kms_failure_return_distinguishable_bodies():
+    # Both are a 503 (neither is an auth result an attacker can induce), but
+    # they are not the same problem: a KMS/SSM failure means the role likely
+    # needs a kms:Decrypt grant, while a still-placeholder secret means the
+    # out-of-band `aws ssm put-parameter` setup step was never run. The
+    # README's verification recipe used to tell a reader "503 means add
+    # kms:Decrypt" unconditionally, which misdiagnoses this second case. The
+    # bodies must differ so the two are distinguishable without reading logs.
+    with patch("shardvpn.handler.settings.cached_secret", side_effect=RuntimeError("boom")):
+        kms_failure = handler.lambda_handler(signed_event({"action": "status"}), None)
+    with patch(
+        "shardvpn.handler.settings.cached_secret",
+        return_value=settings.PLACEHOLDER_SIGNING_SECRET,
+    ):
+        placeholder = handler.lambda_handler(signed_event({"action": "status"}), None)
+
+    assert kms_failure["statusCode"] == placeholder["statusCode"] == 503
+    assert kms_failure["body"] != placeholder["body"]
 
 
 def test_sweep_is_unreachable_over_http():
@@ -257,6 +277,36 @@ def test_up_launches_a_node_with_correctly_tagged_kwargs():
     )
 
 
+def test_up_does_not_mint_an_auth_key_when_the_security_group_check_fails():
+    # ensure_security_group raises a deliberate, repeatable RuntimeError when
+    # someone hand-added an ingress rule to the shardvpn security group.
+    # Minting the Tailscale auth key before that call is resolved would leave
+    # a fresh, pre-authorized, ephemeral key live for KEY_EXPIRY_SECONDS with
+    # nothing to revoke it — and since the failure repeats, every retry would
+    # mint another orphan key. All fallible calls must resolve before mint.
+    with (
+        patch("shardvpn.handler.settings.read_pointer", return_value=None),
+        patch("shardvpn.handler.ec2ops.valid_regions", return_value=["ca-central-1"]),
+        patch("shardvpn.handler.ec2ops.find_nodes", return_value=[]),
+        patch("shardvpn.handler.ec2ops.resolve_ami", return_value="ami-0abc"),
+        patch("shardvpn.handler.settings.get_parameter", return_value="t4g.small"),
+        patch(
+            "shardvpn.handler.ec2ops.ensure_security_group",
+            side_effect=RuntimeError("ingress rules present"),
+        ),
+        patch("shardvpn.handler.tailscale.get_token", return_value="tok"),
+        patch("shardvpn.handler.tailscale.mint_auth_key") as mint_auth_key,
+        patch("shardvpn.handler.ec2ops.launch") as launch,
+    ):
+        response = handler.lambda_handler(
+            signed_event({"action": "up", "region": "ca-central-1", "ttl": "48h"}), None
+        )
+
+    assert response["statusCode"] == 500
+    mint_auth_key.assert_not_called()
+    launch.assert_not_called()
+
+
 def test_up_fails_closed_when_the_pointer_cannot_be_read():
     # A transient SSM error must not be read as 'no node' and launch a second.
     with (
@@ -351,6 +401,48 @@ def test_down_terminates_an_orphaned_node_in_the_default_region_when_the_pointer
     terminate.assert_called_once_with(ANY, "i-0orphan")
     assert response["statusCode"] == 200
     assert json.loads(response["body"])["state"] == "absent"
+
+
+def test_status_selects_the_tracked_node_over_an_untracked_duplicate():
+    # With an unresolved duplicate in the region (the watchdog refuses to
+    # guess which one to terminate when launch-time tags are missing or
+    # malformed), DescribeInstances ordering is arbitrary. Picking nodes[0]
+    # unconditionally can report the *untracked* node's public_ip/hostname
+    # and run the tailnet lookup against the wrong device. The pointer names
+    # which instance is actually tracked; it must win.
+    untracked = {
+        "InstanceId": "i-0untracked",
+        "State": {"Name": "running"},
+        "PublicIpAddress": "203.0.113.9",
+        "Tags": [
+            {"Key": "shardvpn:launched-at", "Value": "2026-08-01T09:00:00Z"},
+            {"Key": "shardvpn:ts-hostname", "Value": "shardvpn-untracked"},
+        ],
+    }
+    tracked = {
+        "InstanceId": "i-0tracked",
+        "State": {"Name": "running"},
+        "PublicIpAddress": "203.0.113.1",
+        "Tags": [
+            {"Key": "shardvpn:launched-at", "Value": "2026-08-01T09:46:00Z"},
+            {"Key": "shardvpn:ts-hostname", "Value": "shardvpn-tracked"},
+        ],
+    }
+    with (
+        patch("shardvpn.handler.settings.read_pointer") as pointer,
+        # DescribeInstances happens to list the untracked node first.
+        patch("shardvpn.handler.ec2ops.find_nodes", return_value=[untracked, tracked]),
+        patch("shardvpn.handler.ec2ops.network_out", return_value=[]),
+        patch("shardvpn.handler.tailscale.get_token", return_value="tok"),
+        patch("shardvpn.handler.tailscale.find_device", return_value=None) as find_device,
+    ):
+        pointer.return_value = settings.Pointer("ca-central-1", "i-0tracked")
+        response = handler.lambda_handler(signed_event({"action": "status"}), None)
+
+    body = json.loads(response["body"])
+    assert body["instance_id"] == "i-0tracked"
+    assert body["public_ip"] == "203.0.113.1"
+    find_device.assert_called_once_with("tok", ANY, hostname="shardvpn-tracked")
 
 
 def test_status_degrades_idle_to_none_when_cloudwatch_fails():

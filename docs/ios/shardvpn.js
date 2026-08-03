@@ -158,8 +158,13 @@ async function send(url, secret, action) {
       lastError = String(e);
     }
 
-    // 1s, 2s, 4s. Re-signs each attempt so the timestamp stays fresh.
-    await new Promise((resolve) => Timer.schedule(1000 * Math.pow(2, attempt), false, resolve));
+    if (attempt < MAX_ATTEMPTS - 1) {
+      // 1s, 2s, 4s. Re-signs each attempt so the timestamp stays fresh. Only
+      // sleeps between attempts — sleeping after the last one would make a
+      // request that fails all four tries wait an extra 8s before showing
+      // an error the user could have seen immediately.
+      await new Promise((resolve) => Timer.schedule(1000 * Math.pow(2, attempt), false, resolve));
+    }
   }
 
   return { error: lastError || "unreachable" };

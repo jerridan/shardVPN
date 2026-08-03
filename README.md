@@ -144,9 +144,18 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST "$(terraform -chdir=terraform o
 ```
 
 `403` means the secret was retrieved and decrypted fine — the request was
-simply, correctly, rejected for a bad signature. `503` means the role needs
-an explicit `kms:Decrypt` statement scoped to `alias/aws/ssm` added to
-`iam.tf`.
+simply, correctly, rejected for a bad signature. A `503` needs one more
+look at the response body before you touch `iam.tf`, because `handler.py`
+returns it for two different reasons:
+
+- `{"error": "cannot verify request"}` — the `GetParameter`/KMS call itself
+  failed. This is the case that needs an explicit `kms:Decrypt` statement
+  scoped to `alias/aws/ssm` added to `iam.tf`.
+- `{"error": "signing secret not configured"}` — decryption worked fine, but
+  the value is still the literal placeholder `ssm.tf` seeds the parameter
+  with. `kms:Decrypt` is not the problem here; you skipped (or mistargeted —
+  wrong region or account) the `put-parameter --overwrite` earlier in this
+  step. Re-run it and retry the `curl`.
 
 ### 4. Confirm the SNS email subscription
 

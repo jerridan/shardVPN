@@ -181,19 +181,37 @@ def sweep(
         _notify_failures(sns, topic_arn, summary)
         return summary
 
-    def scan(region: str) -> tuple[str, list[dict]]:
+    def scan(region: str, ec2) -> tuple[str, list[dict], Exception | None]:
         try:
-            return region, ec2ops.find_nodes(client_factory("ec2", region_name=region))
-        except Exception:
-            log.warning("region scan failed: %s", region)
-            return region, []
+            return region, ec2ops.find_nodes(ec2), None
+        except Exception as exc:
+            log.warning("region scan failed: %s: %s", region, type(exc).__name__)
+            return region, [], exc
+
+    # Clients are created here, on the main thread, one per region, before
+    # any thread touches them. boto3.client (the default client_factory) is
+    # documented as not thread-safe when clients are created concurrently
+    # from the same session — a loader/data-cache race there raises inside
+    # scan(), which without this would be indistinguishable from "no nodes in
+    # this region" and feed the exact pointer-clearing bug below.
+    region_clients = {region: client_factory("ec2", region_name=region) for region in regions}
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        scanned = list(pool.map(scan, regions))
+        scanned = list(pool.map(lambda r: scan(r, region_clients[r]), regions))
 
-    found = [(region, instance) for region, nodes in scanned for instance in nodes]
+    found = [(region, instance) for region, nodes, _ in scanned for instance in nodes]
     summary["regions_scanned"] = len(regions)
     summary["nodes"] = [i["InstanceId"] for _, i in found]
+
+    # A region we failed to scan is undiscovered, not confirmed absent — the
+    # same distinction valid_regions failing makes for the whole sweep,
+    # applied per-region. Recorded so step 4 can refuse to clear the pointer
+    # on unproven absence, and so a scan that fails every hour is alarmable
+    # via _notify_failures rather than silently returning "nothing found".
+    scan_failed_regions = [region for region, _, exc in scanned if exc is not None]
+    for region, _, exc in scanned:
+        if exc is not None:
+            summary["failures"].append(f"region scan failed: {region} ({type(exc).__name__})")
 
     # 1. Reap anything past its expiry. A failed terminate is recorded and
     #    skipped, not fatal — the next node still needs reaping and the
@@ -298,6 +316,14 @@ def sweep(
     #    know which node is "the" node, and guessing here is exactly the
     #    mistake step 2 refuses to make — so the pointer is left untouched
     #    until the ambiguity is resolved.
+    #
+    #    Adopting a *found* node into an empty/stale pointer is still safe
+    #    even when some other region failed to scan — that is positive
+    #    evidence, not a guess. Clearing the pointer to "none" is not: if any
+    #    region failed to scan, "no survivors" is indistinguishable from "the
+    #    tracked node is sitting in the region we couldn't see", and clearing
+    #    on unproven absence is exactly the mistake this sweep's docstring
+    #    calls out for `valid_regions` — the same argument applies per-region.
     if pointer_readable and orderable:
         try:
             if final_candidates:
@@ -309,7 +335,14 @@ def sweep(
                         Pointer(region=region, instance_id=instance["InstanceId"]),
                     )
             elif pointer is not None:
-                write_pointer(ssm, PARAM_NAMES["current_node"], None)
+                if scan_failed_regions:
+                    log.warning(
+                        "not clearing pointer: %d region(s) failed to scan, absence unproven: %s",
+                        len(scan_failed_regions),
+                        scan_failed_regions,
+                    )
+                else:
+                    write_pointer(ssm, PARAM_NAMES["current_node"], None)
         except Exception as exc:
             log.warning("pointer reconciliation failed: %s", exc)
             summary["failures"].append(f"pointer reconciliation: {exc}")

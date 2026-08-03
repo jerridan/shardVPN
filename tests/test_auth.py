@@ -82,6 +82,17 @@ def test_accepts_timestamp_at_the_skew_boundary():
     verify(headers(ts=NOW - 120), BODY, SIGNING_KEY, NOW)
 
 
+def test_accepts_a_leading_zero_timestamp_signed_over_the_raw_header_value():
+    # _TIMESTAMP_RE permits leading zeros ("01753977600"), but the signed
+    # message used to be built from str(int(raw_ts)), which silently drops
+    # them. A client that signs the header value verbatim (as any
+    # reimplementation would) then gets an indistinguishable 403 with no way
+    # to diagnose it. The message must be built from raw_ts as sent.
+    raw_ts = f"0{NOW}"
+    sig = hmac.new(SIGNING_KEY.encode(), f"{raw_ts}.".encode() + BODY, hashlib.sha256).hexdigest()
+    verify(headers(ts=raw_ts, sig=sig), BODY, SIGNING_KEY, NOW)
+
+
 def test_extract_body_handles_plain_text():
     assert extract_body({"body": '{"a":1}', "isBase64Encoded": False}) == b'{"a":1}'
 
