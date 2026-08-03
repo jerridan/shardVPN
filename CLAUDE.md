@@ -179,10 +179,28 @@ Real ones, each hit during this build:
 
 ## History
 
-- v1 has **not** yet been decommissioned as of this commit. Its IAM user
-  (with `IAMFullAccess`, `AmazonEC2FullAccess`, `AmazonS3FullAccess`), that
-  user's long-lived access key, and the `shard-vpn-keys` S3 bucket are
-  believed to still exist in the AWS account this was developed against.
-  See `README.md` → One-time setup → step 1. Update this entry with the
-  date once it's actually done — don't assume it happened just because this
-  file describes the procedure.
+- **v1 was decommissioned on 2026-08-03.** The `shard_vpn` IAM user and its
+  2018-vintage access key are deleted. Its compute was already gone before
+  the sweep — no instances in any region, no ECS cluster, no key pairs, no
+  security groups, no volumes, and the `shard-vpn-keys` bucket had been
+  removed at some earlier point.
+
+  Two things the original decommission note got wrong, worth knowing if you
+  ever read it in git history:
+
+  - The permissions were never attached to the user. They came from a shared
+    IAM **group** called `vpn` (`IAMFullAccess`, `AmazonEC2FullAccess`,
+    `AmazonS3FullAccess`, `AmazonEC2ContainerServiceFullAccess`,
+    `CloudWatchLogsFullAccess`, plus an inline CloudFormation policy).
+  - **Three unrelated users shared that group** — `hackintosh`,
+    `nulogy-laptop`, `windows-desktop` — each with an active, unused,
+    MFA-less access key carrying `IAMFullAccess`, i.e. self-escalation to
+    administrator. Deleting `shard_vpn` alone would have closed one of four
+    identical holes while reporting the job done.
+
+  Those three keys were set to `Inactive` (reversible; none had been used
+  since 2018–2020, and none of the users has a console password, so they now
+  have no access path at all). The `vpn` group itself still exists with
+  `IAMFullAccess` attached — reactivating any of those keys reopens the
+  escalation. Detaching `IAMFullAccess` from the group, or deleting the
+  group and its users outright, is unfinished business unrelated to shardVPN.

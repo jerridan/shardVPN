@@ -38,15 +38,24 @@ and the phone.
 
 ### 1. Decommission v1 — do this first
 
+> **Already done in the account this was developed against (2026-08-03).**
+> Skip to step 2 there. Keep reading if you are deploying into a different
+> account that ever ran v1.
+
 **If you ever ran this repo's v1, do this before anything else.** Until it is
 done, the security posture described further down is not the one you have.
-v1's setup instructions had you create an IAM user
-carrying `IAMFullAccess`, `AmazonEC2FullAccess` and `AmazonS3FullAccess`,
-plus a long-lived access key in `~/.aws/credentials`. That user, its key,
-and an S3 bucket named `shard-vpn-keys` still exist in your account until
-you remove them — the shell scripts that knew how to tear v1 down were
-deleted along with the rest of v1's code, so this has to happen with
-plain AWS CLI / console commands, not this repo's tooling.
+v1's setup instructions had you create an IAM user carrying `IAMFullAccess`,
+`AmazonEC2FullAccess` and `AmazonS3FullAccess`, plus a long-lived access key
+in `~/.aws/credentials`. The shell scripts that knew how to tear v1 down were
+deleted with the rest of v1's code, so this happens with plain AWS CLI or
+console commands, not this repo's tooling.
+
+**Do not assume the permissions are attached to the user.** In the original
+account they were not — they came from a shared IAM *group*, and three
+unrelated users were in it, each with an active `IAMFullAccess` key. Deleting
+the VPN user alone would have left three identical escalation paths open
+while looking finished. Enumerate before deleting, and check group
+membership both ways.
 
 ```bash
 # Find what v1 left behind
