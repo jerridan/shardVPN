@@ -84,12 +84,14 @@ instead) if it's illustrative shell usage rather than a real module.
 - Whether Scriptable Keychain values sync to iCloud is unconfirmed either
   way. Until it's known, assume every device sharing iCloud Keychain with
   the configured phone can control the VPN.
-- Whether `kms:Decrypt` must be granted explicitly for `alias/aws/ssm`.
-  The README's setup step 3 has a `curl` that answers this: `403` means the
-  secret decrypted, `503` means the role needs the grant. Do NOT try to
-  verify by assuming the `shardvpn-lambda` role — its trust policy admits
-  only `lambda.amazonaws.com`, so you get an `AccessDenied` about the wrong
-  thing entirely.
+- ~~Whether `kms:Decrypt` must be granted explicitly for `alias/aws/ssm`.~~
+  **Resolved 2026-08-03: not required.** A live request with a deliberately
+  wrong signature returned `403` with an empty body, which proves the handler
+  fetched and decrypted the SecureString before reaching the signature check —
+  the AWS-managed key policy grants account principals via `kms:ViaService` as
+  assumed. No explicit statement needed in `iam.tf`. (Do not try to verify by
+  assuming the `shardvpn-lambda` role: its trust policy admits only
+  `lambda.amazonaws.com`, so you get an `AccessDenied` about the wrong thing.)
 - `archive_file`'s `excludes = ["**/__pycache__/**"]` was verified against
   the provider's `doublestar` matching by reading its source, not by a real
   `terraform apply`. If a stray `.pyc` ever lands in the deployment zip,
