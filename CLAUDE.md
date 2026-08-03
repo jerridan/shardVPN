@@ -74,9 +74,17 @@ instead) if it's illustrative shell usage rather than a real module.
   the first live launch — the node did not self-terminate (the verification
   loop passed), and real output shows `ExitNodeOption: True` alongside
   `Tags: ['tag:shardvpn-exit']`.
-- The idle threshold in `/shardvpn/idle-threshold-bytes` (currently a
-  round-number default) is a guess pending measurement of real idle
-  `NetworkOut` during an end-to-end run.
+- ~~The idle threshold in `/shardvpn/idle-threshold-bytes`.~~ **Resolved
+  2026-08-03 by measurement, and the guess was inverted.** An idle node emits
+  ~45 MB/24h of `NetworkOut`; the guessed threshold was 5 MB. `should_alert`
+  fires only when `NetworkOut < threshold`, so the forgotten-node email could
+  never have sent — with TTL defaulting to `never`, the whole safety net was
+  inert. Now 300 MB (~6.6x the floor). Only ~1.4% of the idle floor is
+  Tailscale keepalives; the rest is SSM agent polling and similar, so this
+  metric measures "is the VPN in use" on top of a large always-on baseline.
+  Measure with CloudWatch, not interface counters — the watchdog reads
+  CloudWatch, and `tailscale ssh` sessions inflate the interface number by
+  being traffic themselves.
 - Whether Scriptable exposes `crypto` or `TextEncoder` is unprobed — both
   are vendored in `docs/ios/shardvpn.js` on the assumption it does not.
   If a live run shows they exist, the vendored versions are extra code, not
