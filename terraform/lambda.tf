@@ -53,10 +53,26 @@ resource "aws_lambda_function_url" "shardvpn" {
   authorization_type = "NONE"
 }
 
-# A NONE function URL is NOT public without these. Only the console and SAM
-# create the resource policy automatically; via Terraform you must add it or
-# every request returns 403 from the Lambda service — indistinguishable from a
-# signature mismatch. Since October 2025 BOTH permissions are required.
+# A NONE function URL is NOT public without an invoke permission, and since
+# October 2025 both lambda:InvokeFunctionUrl and lambda:InvokeFunction are
+# required. Without them every request returns 403 from the Lambda service —
+# indistinguishable from a signature mismatch, which is the worst possible
+# confusion for this system's only debugging path.
+#
+# Observed on the first real apply (2026-08-03), and worth knowing before you
+# debug it: creating the function URL ALSO causes a third statement,
+# `FunctionURLAllowInvokeAction`, to appear automatically. It duplicates
+# `url_invoke_function` below. Harmless — identical Allow grants — but it
+# means the docs' claim that only the console and SAM create the policy is no
+# longer the whole story.
+#
+# Also observed: `aws_lambda_permission` retries through IAM propagation
+# delay, and a retry can collide with its own earlier success, failing the
+# apply with `ResourceConflictException: statement id already exists` after
+# several minutes while the statement is in fact present. The fix is to
+# import, not to change the config:
+#
+#   terraform import aws_lambda_permission.url_invoke shardvpn/FunctionURLAllowPublicAccess
 resource "aws_lambda_permission" "url_invoke" {
   statement_id           = "FunctionURLAllowPublicAccess"
   action                 = "lambda:InvokeFunctionUrl"

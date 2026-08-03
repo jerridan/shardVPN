@@ -173,6 +173,16 @@ Real ones, each hit during this build:
 - Terraform now installs from HashiCorp's own tap, not homebrew-core:
   `brew install hashicorp/tap/terraform`. `brew install terraform` alone no
   longer works.
+- `aws_lambda_permission` retries through IAM propagation delay, and a retry
+  can collide with its own earlier success — the apply fails after ~5 minutes
+  with `ResourceConflictException: statement id already exists` while the
+  statement is in fact present. Import it rather than editing the config:
+  `terraform import aws_lambda_permission.url_invoke shardvpn/FunctionURLAllowPublicAccess`.
+  Hit on the first real apply, 2026-08-03.
+- Creating a `NONE`-auth function URL also produces a third policy statement,
+  `FunctionURLAllowInvokeAction`, automatically. It duplicates
+  `url_invoke_function`; harmless, but the AWS docs' claim that only the
+  console and SAM create the policy is no longer the whole story.
 - Address the tailnet as `-` in every Tailscale API call
   (`/api/v2/tailnet/-/...`), never by its real name — this repository is
   public, and the tailnet name isn't secret but has no reason to be in it.
