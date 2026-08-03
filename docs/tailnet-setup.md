@@ -6,20 +6,86 @@ scoped OAuth client and does everything else through `tailscale up`/`set`/
 `logout` running on the node itself. This page sets up the tailnet side of
 that contract.
 
-## 1. Tag the exit node
+## 1. Policy file
 
-Every node shardVPN launches is tagged `tag:shardvpn-exit`. It's what the
-OAuth client below is restricted to, what `autoApprovers` keys off, and what
-the Lambda searches for when `status` looks up device state. Add it to your
-tailnet's policy file (admin console → Access Controls) with an owner:
+Everything on the tailnet side is one edit to the policy file, at
+[login.tailscale.com/admin/acls/file](https://login.tailscale.com/admin/acls/file).
+
+**Merge these sections into what is already there — do not replace the file.**
+Tailscale is deny-by-default: drop the existing `grants` (or `acls`, on older
+tailnets) and every device stops reaching every other one, including the exit
+node you are about to build.
+
+Four things are needed. Against Tailscale's current default policy the result
+looks like this — the `grants` wildcard and the first `ssh` rule are stock,
+the four commented additions are shardVPN's:
 
 ```json
 {
-  "tagOwners": {
-    "tag:shardvpn-exit": ["autogroup:admin"]
-  }
+    "tagOwners": {
+        // Every node shardVPN launches carries this tag. The OAuth client is
+        // restricted to it, autoApprovers keys off it, and `status` finds the
+        // node by it.
+        "tag:shardvpn-exit": ["autogroup:admin"],
+    },
+
+    // Exit-node advertisement normally waits for a click in the admin console.
+    // Nobody is at a console mid-trip, so auto-approve it for the tag. Without
+    // this, `tailscale set --advertise-exit-node` succeeds but sits pending,
+    // cloud-init's verification loop times out, and the node fails closed —
+    // logs out and terminates itself rather than billing while unusable.
+    "autoApprovers": {
+        "exitNode": ["tag:shardvpn-exit"],
+    },
+
+    "grants": [
+        {"src": ["*"], "dst": ["*"], "ip": ["*"]},
+
+        // REQUIRED, and the wildcard above does NOT cover it. Device-to-device
+        // traffic and internet egress through an exit node are separate
+        // permissions; only devices granted `autogroup:internet` can use an
+        // exit node at all. Omit this and the node boots, joins, advertises,
+        // and appears selectable in the picker while routing nothing — a
+        // failure cloud-init cannot detect, because the node is genuinely
+        // healthy and the block is here in the policy file.
+        {"src": ["autogroup:member"], "dst": ["autogroup:internet"], "ip": ["*"]},
+    ],
+
+    "ssh": [
+        {
+            "action": "check",
+            "src":    ["autogroup:member"],
+            "dst":    ["autogroup:self"],
+            "users":  ["autogroup:nonroot", "root"],
+        },
+
+        // The node has zero inbound security-group rules, so `tailscale ssh`
+        // is the only way in — and the only diagnostic path if cloud-init
+        // fails partway. `accept` rather than `check` deliberately: a browser
+        // re-auth prompt is useless when debugging from an airport.
+        //
+        // `autogroup:member` rather than `autogroup:admin`: Tailscale has
+        // rejected `autogroup:admin` in `ssh` src (tailscale/tailscale#8194),
+        // and the current syntax reference disagrees with the SSH KB page
+        // about whether that still holds. `autogroup:member` is unambiguous —
+        // it appears in this position in Tailscale's own default file — and on
+        // a single-person tailnet the two mean the same thing.
+        {
+            "action": "accept",
+            "src":    ["autogroup:member"],
+            "dst":    ["tag:shardvpn-exit"],
+            "users":  ["autogroup:nonroot", "root"],
+        },
+    ],
 }
 ```
+
+The file is HuJSON, so comments and trailing commas are legal. The editor
+validates before saving; a rejected policy is never applied.
+
+Older tailnets use `acls` instead of `grants`. Both work — add the
+`autogroup:internet` permission in whichever form the file already uses,
+rather than mixing the two.
 
 ## 2. Create a scoped OAuth client
 
@@ -41,51 +107,9 @@ ephemeral-node expiry (30–60 minutes after last activity) as a backstop if
 that unit doesn't get to run.
 
 Save the client ID and secret somewhere temporary — they go into SSM in
-step 5, and nowhere else.
+step 3, and nowhere else.
 
-## 3. Auto-approve the exit node
-
-Exit-node advertisement normally waits for a click in the admin console.
-Nobody is at a console mid-trip, so auto-approve it for the tag instead —
-add to the policy file:
-
-```json
-{
-  "autoApprovers": {
-    "exitNode": ["tag:shardvpn-exit"]
-  }
-}
-```
-
-Without this, `tailscale set --advertise-exit-node` on the node succeeds but
-the advertisement sits pending, `userdata.sh`'s verification loop times out,
-and the node fails closed (logs out and shuts itself down) rather than
-sitting there billing while silently unusable.
-
-## 4. Grant SSH to the tagged node
-
-The node's security group has zero ingress rules — no port 22, nothing
-listening. The only way in is `tailscale ssh`, and `tailscale up --ssh`
-(which `userdata.sh` runs on every launch) grants nothing on its own without
-a matching `ssh` stanza in the policy file:
-
-```json
-{
-  "ssh": [
-    {
-      "action": "accept",
-      "src":    ["autogroup:admin"],
-      "dst":    ["tag:shardvpn-exit"],
-      "users":  ["autogroup:nonroot", "root"]
-    }
-  ]
-}
-```
-
-This is also the only diagnostic path if cloud-init fails partway through:
-`tailscale ssh <node-name>`, then `cat /var/log/shardvpn-init.log`.
-
-## 5. Store the credentials in SSM
+## 3. Store the credentials in SSM
 
 Terraform creates three `SecureString` parameters with placeholder values
 and never writes to them again — `aws_ssm_parameter` stores its value in
