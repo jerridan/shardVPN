@@ -92,6 +92,15 @@ instead) if it's illustrative shell usage rather than a real module.
 - Whether Scriptable Keychain values sync to iCloud is unconfirmed either
   way. Until it's known, assume every device sharing iCloud Keychain with
   the configured phone can control the VPN.
+
+  Confirmed 2026-08-05: the Keychain entries (`shardvpn.url`,
+  `shardvpn.secret`) survive deleting and recreating the script — they belong
+  to Scriptable, not to the script file. Convenient for updates, but it means
+  **Scriptable's Keychain is app-wide: any script installed in Scriptable can
+  read the signing secret**, including gallery scripts. "Do not run untrusted
+  Scriptable scripts" is therefore part of this system's security posture. To
+  actually rotate, overwrite `/shardvpn/signing-secret` in SSM and clear the
+  keychain entry on the phone — deleting the script alone does nothing.
 - ~~Whether `kms:Decrypt` must be granted explicitly for `alias/aws/ssm`.~~
   **Resolved 2026-08-03: not required.** A live request with a deliberately
   wrong signature returned `403` with an empty body, which proves the handler
