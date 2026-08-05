@@ -31,16 +31,38 @@ manual SSH provisioning) is gone from this repository and lives only in git
 history on `master`. If you ran v1, its AWS resources almost certainly still
 exist — see step 1 below before doing anything else.
 
+## What you need
+
+- An **AWS account**, with credentials configured locally. Long-lived access
+  keys are not required and not recommended — `aws login` (AWS CLI ≥ 2.32)
+  signs you in through the browser and issues temporary credentials with
+  nothing durable on disk. Whichever identity you use needs broad permissions
+  for the initial apply: it creates a Lambda, IAM roles, SSM parameters, an
+  SNS topic, an EventBridge schedule, CloudWatch alarms and a budget.
+- A **Tailscale account** (the free plan is enough) with your devices already
+  on the tailnet.
+- An **iPhone**, for the client. The control plane is a plain HTTPS endpoint,
+  so anything that can sign an HMAC works — but the shipped client is
+  [Scriptable](https://scriptable.app).
+- Locally: `terraform` ≥ 1.13, [`uv`](https://docs.astral.sh/uv/), and the
+  AWS CLI v2. `shellcheck` and `trivy` only if you want to run the full CI
+  checks by hand.
+
+**Pick your region before you apply.** `terraform/variables.tf` defaults to
+`ca-central-1` (Montréal) because that is near the author. Set
+`default_node_region` in `terraform.tfvars` to somewhere near *you* — it is
+where `up` launches when a request doesn't name a region, and it can be
+changed later without redeploying (see Daily use).
+
 ## One-time setup
 
-Do these in order. Steps 1–4 are infrastructure; steps 5–6 wire up Tailscale
-and the phone.
+Do these in order. Step 1 only applies if you ran this repo's v1. Note that
+step 3 needs credentials produced in step 5 — either do 5 first, or come back.
 
-### 1. Decommission v1 — do this first
+### 1. Decommission v1 — only if you ran it
 
-> **Already done in the account this was developed against (2026-08-03).**
-> Skip to step 2 there. Keep reading if you are deploying into a different
-> account that ever ran v1.
+> Not applicable to a fresh deployment. This repo had a previous life; if you
+> are new here, skip to step 2.
 
 **If you ever ran this repo's v1, do this before anything else.** Until it is
 done, the security posture described further down is not the one you have.
@@ -93,7 +115,10 @@ brew install hashicorp/tap/terraform
 ```bash
 cd terraform
 cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars: set notification_email
+# edit terraform.tfvars:
+#   notification_email  — where idle/orphan/alarm mail goes (required)
+#   default_node_region — where `up` launches by default (defaults to
+#                         ca-central-1; change it to somewhere near you)
 terraform init
 terraform apply
 ```
@@ -135,9 +160,11 @@ you're following this list top to bottom, or come back here after.
 **Verify `kms:Decrypt` works before relying on it.** The Lambda's IAM role
 (`iam.tf`) does not grant `kms:Decrypt` on the AWS-managed `alias/aws/ssm`
 key explicitly — the design assumes that key's own policy already lets
-account principals decrypt via a `kms:ViaService` condition. That's a
-"probably" sitting on the authentication hot path: if it's wrong, every
-`up`/`down`/`status` request returns a 503 with nothing else to explain why.
+account principals decrypt via a `kms:ViaService` condition. That held in the
+account this was first deployed to, but it depends on your key policy, and it
+sits on the authentication hot path: if it's wrong, every `up`/`down`/`status`
+request returns a 503 with nothing else to explain why. Thirty seconds to
+check.
 The `shardvpn-lambda` role can't be assumed directly to check by hand — its
 trust policy only allows `lambda.amazonaws.com` — so verify it the way a
 real request actually exercises it instead: `handler.py` fetches and
@@ -181,19 +208,30 @@ client, auto-approval for exit-node advertisement, and an SSH grant. See
 
 ### 6. Phone setup
 
-Install Scriptable, add the client script, wire up three Shortcuts. See
-[`docs/ios-shortcut.md`](docs/ios-shortcut.md).
+Install Scriptable and paste in the client script — copy it from the raw URL
+on the phone rather than syncing via iCloud Drive, which silently stops
+delivering updates. Optionally wrap each action in a Shortcut for a
+home-screen icon. See [`docs/ios-shortcut.md`](docs/ios-shortcut.md).
 
 ## Daily use
 
-Tap a home-screen shortcut:
+Run the script from Scriptable and pick an action, or tap a home-screen
+shortcut if you made them:
 
-- **Up** — launches a node in the default region (or send a custom region /
-  TTL by editing the script's action, if you need that). Usually selectable
-  as an exit node on your devices within a couple of minutes.
+- **Up** — launches a node in the default region, usually selectable as an
+  exit node within a couple of minutes. **Up elsewhere…** prompts for a
+  region code instead, for when the default isn't near you.
 - **Status** — current state, region, public IP, whether it's on the
-  tailnet yet, how long it's been idle.
+  tailnet yet, how long since it last carried real traffic.
 - **Down** — terminates the node and removes it from the tailnet.
+
+To move the default permanently, no redeploy needed — the Lambda reads it
+per request:
+
+```bash
+aws ssm put-parameter --name /shardvpn/default-region \
+  --value eu-west-1 --overwrite
+```
 
 Calling `up` while a node is already running just returns that node — it's
 idempotent, not an error. `down` with nothing running is a no-op. Forgetting
@@ -213,8 +251,7 @@ Nothing runs between trips.
 
 Data egress is the one variable cost. AWS's free tier for data transfer out
 to the internet is currently **100 GB/month**, aggregated across all AWS
-services and regions (confirmed against AWS's EC2 on-demand pricing page,
-not quoted from memory) — normal VPN usage over a weekend trip is well
+services and regions — normal VPN usage over a weekend trip is well
 under that; sustained heavy transfer is not.
 
 ## Security posture
@@ -277,7 +314,7 @@ uv run ruff format --check .
 uv run pytest -v
 ```
 
-182 tests, fully offline: `botocore.stub.Stubber` for every AWS call,
+191 tests, fully offline: `botocore.stub.Stubber` for every AWS call,
 `urlopen` patched for Tailscale, a client factory for the watchdog sweep.
 There is no integration test suite — the real verification is an end-to-end
 run against live AWS and a live tailnet (`curl ifconfig.me` through the node
