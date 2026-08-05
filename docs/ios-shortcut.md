@@ -53,10 +53,23 @@ URL config is destroyed and recreated (`terraform destroy` then re-apply, or
 deleting the function), in which case the phone needs the new value.
 
 With no parameter, running the script directly shows an action sheet —
-`status`, `up`, `down` — and a result notification. That's enough to test the
-whole path before wiring up Shortcuts.
+`status`, `up`, `down` — and a result notification.
 
-## 3. Add three Shortcuts
+**That is a complete, working setup.** Everything below is convenience, not
+function: open Scriptable, tap `shardVPN`, pick an action. Three taps instead
+of one. If you use this a few times a year, stopping here is reasonable.
+
+## 3. Add three Shortcuts (optional)
+
+Shortcuts buys four things the action sheet cannot:
+
+- a home-screen or lock-screen icon — one tap, no app launch, no menu
+- Siri (`"Hey Siri, VPN up"`), useful with hands full of luggage
+- the Action Button or Control Center on newer iPhones
+- automation triggers, e.g. `up` on joining an unknown WiFi network
+
+It also removes the chance of tapping `down` when you meant `up` in a hurry,
+since each action becomes its own icon.
 
 In the Shortcuts app, create three shortcuts, one per action:
 
