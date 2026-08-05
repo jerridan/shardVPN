@@ -9,12 +9,27 @@ action.
 ## 1. Install Scriptable and add the script
 
 1. Install Scriptable from the App Store.
-2. Open it, tap **+** to create a new script.
-3. Name it exactly `shardVPN`. The name matters — it's what the Shortcuts
-   wrapper in step 3 refers to.
-4. Delete the placeholder contents and paste in the entire contents of
-   `docs/ios/shardvpn.js` from this repo.
-5. Save.
+2. On the phone, open the raw file in Safari and copy all of it:
+
+   ```
+   https://raw.githubusercontent.com/jerridan/shardVPN/master/docs/ios/shardvpn.js
+   ```
+
+3. In Scriptable, tap **+**, paste, and name it exactly `shardVPN`. The name
+   matters — it's what the optional Shortcuts wrappers refer to.
+
+**Use the raw URL, not iCloud Drive.** Dropping the file into Scriptable's
+iCloud folder from a Mac appears to work and then quietly stops: during this
+project's setup a new script synced to the phone, but a later *update* to
+that same file never arrived, and neither did a fresh marker file written
+minutes afterwards — iCloud had stalled with no error anywhere. The failure
+mode is silent and looks like the phone running old code for no reason, which
+is a miserable thing to debug against a signature mismatch.
+
+The raw URL has none of that: it is the same file CI checks, it works from
+anywhere, and re-fetching it is how you take any future fix. Delete the
+script and paste the current version — the keychain prompts return on the
+next run.
 
 The script is entirely self-contained: it vendors its own HMAC-SHA256 and
 UTF-8 encoder rather than relying on `crypto` or `TextEncoder`, because

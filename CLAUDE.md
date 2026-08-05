@@ -196,6 +196,13 @@ Real ones, each hit during this build:
 - Address the tailnet as `-` in every Tailscale API call
   (`/api/v2/tailnet/-/...`), never by its real name — this repository is
   public, and the tailnet name isn't secret but has no reason to be in it.
+- **Do not distribute the Scriptable client via iCloud Drive.** Copying it
+  into `~/Library/Mobile Documents/iCloud~dk~simonbs~Scriptable/Documents/`
+  works exactly once and then stalls silently: during setup the initial file
+  reached the phone, a later update to it never did, and neither did a fresh
+  marker file written to prove the point. No error surfaces anywhere; the
+  phone simply runs old code. Use the raw GitHub URL instead — same file CI
+  checks, works from anywhere, and re-fetching is the whole update procedure.
 
 ## History
 
