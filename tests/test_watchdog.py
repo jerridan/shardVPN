@@ -53,13 +53,30 @@ def test_malformed_launched_at_does_not_suppress_the_alert():
     assert should_alert(0, THRESHOLD, None, NOW, "garbage") is True
 
 
-def test_idle_seconds_measures_from_the_last_non_zero_datapoint():
+# Values here are taken from a real 24h sample on a live node, not invented:
+# idle 5-minute buckets ran 1,386 B (min) to ~12,000 B (median); a bucket
+# carrying real browsing held 397,000,000 B. The original tests used 900.0 for
+# "traffic" and 0.0 for "idle" — neither of which CloudWatch ever emits — which
+# is exactly why they passed against a function that reported "5m idle" for a
+# node nobody had touched in days.
+IDLE_BUCKET = 11_751.0
+BUSY_BUCKET = 397_000_000.0
+
+
+def test_idle_seconds_measures_from_the_last_datapoint_carrying_real_traffic():
     points = [
-        (NOW - timedelta(hours=3), 900.0),
-        (NOW - timedelta(hours=2), 0.0),
-        (NOW - timedelta(hours=1), 0.0),
+        (NOW - timedelta(hours=3), BUSY_BUCKET),
+        (NOW - timedelta(hours=2), IDLE_BUCKET),
+        (NOW - timedelta(hours=1), IDLE_BUCKET),
     ]
     assert idle_seconds(points, NOW) == 3 * 3600
+
+
+def test_idle_seconds_ignores_the_background_floor():
+    # The regression that shipped: every bucket is non-zero on a real node, so
+    # a `value > 0` test always matched the newest one and reported ~0 idle.
+    points = [(NOW - timedelta(hours=h), IDLE_BUCKET) for h in (6, 5, 4, 3, 2, 1)]
+    assert idle_seconds(points, NOW) == 6 * 3600
 
 
 def test_idle_seconds_is_none_without_datapoints():
@@ -67,7 +84,12 @@ def test_idle_seconds_is_none_without_datapoints():
 
 
 def test_idle_seconds_is_zero_when_currently_busy():
-    assert idle_seconds([(NOW, 5000.0)], NOW) == 0
+    assert idle_seconds([(NOW, BUSY_BUCKET)], NOW) == 0
+
+
+def test_idle_seconds_floor_is_configurable():
+    points = [(NOW - timedelta(hours=2), 50_000.0), (NOW - timedelta(hours=1), 1_000.0)]
+    assert idle_seconds(points, NOW, floor=10_000) == 2 * 3600
 
 
 # --- sweep -----------------------------------------------------------------

@@ -61,12 +61,36 @@ def should_alert(
         return True
 
 
-def idle_seconds(points: list[tuple[datetime, float]], now: datetime) -> int | None:
-    """Seconds since the most recent datapoint carrying any traffic."""
+# A 5-minute NetworkOut bucket below this is background noise, not use.
+#
+# Measured on a live node: an idle exit node never reports zero. Its quietest
+# bucket over 24h was 1,386 bytes and the median was 11,751 — SSM agent
+# polling, DNS, NTP. The original `value > 0` test therefore matched every
+# bucket ever recorded, so `idle_for` reported "5m" no matter how long the
+# node had gone untouched. It was not a slightly-wrong number; it carried no
+# information at all.
+#
+# 1 MB is ~85x the observed median idle bucket and far below any bucket
+# carrying real traffic (the busiest in the same sample held 397 MB).
+IDLE_BUCKET_FLOOR_BYTES = 1_000_000
+
+
+def idle_seconds(
+    points: list[tuple[datetime, float]],
+    now: datetime,
+    floor: int = IDLE_BUCKET_FLOOR_BYTES,
+) -> int | None:
+    """Seconds since the most recent datapoint carrying real user traffic.
+
+    "Real" means above the background floor, not merely above zero — see
+    IDLE_BUCKET_FLOOR_BYTES. Returns None with no data; returns the age of the
+    whole window when every bucket is background noise, which is the correct
+    reading of "nothing has used this for at least as long as I can see".
+    """
     if not points:
         return None
     for timestamp, value in reversed(points):
-        if value > 0:
+        if value > floor:
             return max(int((now - timestamp).total_seconds()), 0)
     return max(int((now - points[0][0]).total_seconds()), 0)
 
