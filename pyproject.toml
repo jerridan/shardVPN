@@ -1,0 +1,30 @@
+[project]
+name = "shardvpn"
+version = "2.0.0"
+requires-python = ">=3.13"
+
+# Dev tooling only. The Lambda ships with NO third-party dependencies —
+# boto3 comes from the runtime, everything else is stdlib. boto3 is here
+# purely so botocore.stub.Stubber is available to the test suite.
+[dependency-groups]
+dev = ["pytest>=8", "boto3>=1.35", "ruff>=0.16"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["lambda"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S"]
+# S101 assert-in-tests; S105/S106 flag test fixtures named "secret"/"password".
+ignore = ["S101", "S105", "S106"]
+
+# Without this, isort groups `shardvpn.*` with third-party packages, because
+# the package lives under lambda/ rather than at the repo root. That makes
+# every test file's imports look wrong in a way ruff then "fixes" the wrong
+# way round. shardvpn is first-party; say so.
+[tool.ruff.lint.isort]
+known-first-party = ["shardvpn"]

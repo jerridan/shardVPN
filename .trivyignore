@@ -1,0 +1,41 @@
+# The brief anticipated ignores for "public Lambda function URL" and
+# "wildcard IAM resources". Neither fires against this config with the
+# installed checks bundle (trivy 0.72.0): AWS-0057 (no-policy-wildcards) is
+# marked deprecated and does not run by default, and AWS-0067
+# (restrict-source-arn) only inspects permissions whose principal ends in
+# ".amazonaws.com" — ours is "*" for the public function-URL grant, so it is
+# not evaluated either. The three IDs below are what `trivy config
+# terraform/` actually reports; each is a deliberate design trade-off for a
+# personal, single-user control plane, not an oversight.
+
+# AWS-0017: CloudWatch log group /aws/lambda/shardvpn is not encrypted with a
+# customer-managed KMS key. It is already encrypted at rest with an
+# AWS-owned key by default. The handler deliberately never logs secret
+# values (auth keys, signing secret, request bodies) — only exception types
+# and identifiers — so there is no sensitive content in this log group for a
+# CMK to protect. A CMK would add an ongoing cost and a key policy to
+# maintain for no corresponding reduction in exposure.
+AWS-0017
+
+# AWS-0066: the Lambda function does not have X-Ray tracing enabled. This is
+# a single-concurrency, low-volume control plane (reserved_concurrent_executions
+# = 1); the CloudWatch alarms in alarms.tf on Errors and Throttles already
+# cover the failure modes that matter for a system with no one watching
+# between trips. Enabling tracing would require adding xray:PutTraceSegments
+# / xray:PutTelemetryRecords with Resource = "*" to the Lambda role, widening
+# the least-privilege boundary Task 12 exists to enforce, for a debugging
+# aid this project does not otherwise need.
+AWS-0066
+
+# AWS-0095: the SNS topic is not encrypted. Setting kms_master_key_id to the
+# AWS-managed "alias/aws/sns" key trades this finding for AWS-0136 (SNS not
+# using a customer-managed key), also HIGH severity, so it is not actually a
+# free fix. The topic carries only CloudWatch alarm descriptions and AWS
+# Budgets threshold notifications — no secrets — and its sole subscriber is
+# an email address, which AWS delivers over SMTP without end-to-end
+# encryption regardless of the topic's at-rest state, so SSE-KMS here would
+# not close a real exposure. A customer-managed key adds cost and a key
+# policy (granting cloudwatch.amazonaws.com and budgets.amazonaws.com use of
+# the key) for content that is already effectively public to the one
+# recipient it reaches.
+AWS-0095

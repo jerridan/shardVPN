@@ -1,5 +1,18 @@
 .idea
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
 
-# Terraform state files
-*terraform.tfstate*
-.terraform
+# Terraform state contains SSM parameter values in plaintext
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.tfstate.lock.info
+terraform/.build/
+
+# tfvars carry an email address and account-specific values.
+# .terraform.lock.hcl IS committed.
+*.tfvars
+!*.tfvars.example
