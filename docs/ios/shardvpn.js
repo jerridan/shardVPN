@@ -170,6 +170,34 @@ async function send(url, secret, action) {
   return { error: lastError || "unreachable" };
 }
 
+// --- notification text -----------------------------------------------------
+
+// This is read on a lock screen, one line, usually while walking somewhere.
+// Say what happened and what to do about it — nothing else.
+function describe(result) {
+  if (result.error) return `error: ${result.error}`;
+
+  // No node: the tailnet field is necessarily "unknown", so printing it is
+  // noise. The first version rendered this as the baffling "absent unknown".
+  if (result.state === "absent") return "no node running";
+
+  const where = result.region || "";
+
+  // Booted but not on the tailnet. Distinguishing this from "ready" is the
+  // whole reason status queries Tailscale as well as EC2 — otherwise a node
+  // that silently failed to join looks identical to one still starting.
+  if (result.tailnet === "absent") {
+    return `${where}: starting, not on tailnet yet (${result.age || "0m"})`;
+  }
+
+  if (result.tailnet === "online") {
+    const idle = result.idle_for ? `, idle ${result.idle_for}` : "";
+    return `${where}: ready${idle}`;
+  }
+
+  return `${where}: ${result.state}`;
+}
+
 // --- main -----------------------------------------------------------------
 
 async function main() {
@@ -191,9 +219,7 @@ async function main() {
 
   const notification = new Notification();
   notification.title = "shardVPN";
-  notification.body = result.error
-    ? `error: ${result.error}`
-    : `${result.state} ${result.region || ""} ${result.tailnet || ""}`.trim();
+  notification.body = describe(result);
   await notification.schedule();
 
   console.log(JSON.stringify(result, null, 2));
