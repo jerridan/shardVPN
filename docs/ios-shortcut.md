@@ -38,6 +38,20 @@ straight from the keychain. If you ever need to change either value, delete
 and reinstall the script, or clear those two keychain entries some other
 way; the script has no built-in "reconfigure" prompt.
 
+**Getting them onto the phone.** Don't retype either — both are long and a
+single wrong character produces an opaque `403`. Pipe each to `pbcopy` on the
+Mac and paste via Universal Clipboard, or store them in a password manager
+and paste from there on the phone. The password manager is worth it
+regardless: the signing secret then exists in SSM, the phone keychain, and
+one recoverable place, rather than only the first two. Losing the phone
+otherwise means minting a new secret.
+
+**The Function URL is stable.** Its id is fixed when the URL config is
+created and survives every code deploy — verified by observing the config's
+`LastModifiedTime` stay put across a function update. It changes only if the
+URL config is destroyed and recreated (`terraform destroy` then re-apply, or
+deleting the function), in which case the phone needs the new value.
+
 With no parameter, running the script directly shows an action sheet —
 `status`, `up`, `down` — and a result notification. That's enough to test the
 whole path before wiring up Shortcuts.
