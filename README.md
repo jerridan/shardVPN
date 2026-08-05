@@ -1,6 +1,6 @@
 # shardVPN
 
-A personal, on-demand Tailscale exit node on EC2, triggered from an iPhone.
+A personal, on-demand Tailscale exit node on EC2, triggered from your phone.
 Nothing runs, and nothing costs anything, between trips.
 
 ShardVPN is named for the Shards in Brandon Sanderson's series
@@ -41,9 +41,19 @@ exist — see step 1 below before doing anything else.
   SNS topic, an EventBridge schedule, CloudWatch alarms and a budget.
 - A **Tailscale account** (the free plan is enough) with your devices already
   on the tailnet.
-- An **iPhone**, for the client. The control plane is a plain HTTPS endpoint,
-  so anything that can sign an HMAC works — but the shipped client is
-  [Scriptable](https://scriptable.app).
+- **Something to trigger it from.** The control plane is a plain HTTPS
+  endpoint: POST a JSON body with an `X-ShardVPN-Timestamp` header and an
+  `X-ShardVPN-Signature` header holding `HMAC-SHA256(secret, "<timestamp>.<body>")`
+  in lowercase hex. Anything that can do that is a valid client — Android via
+  Termux or HTTP Shortcuts, a shell function on a laptop, a watch complication,
+  a shell script over SSH.
+
+  What ships here is an iOS client, because that is what the author carries:
+  [Scriptable](https://scriptable.app) running
+  [`docs/ios/shardvpn.js`](docs/ios/shardvpn.js). If you are writing your own,
+  that file is also the reference implementation — it vendors HMAC-SHA256 in
+  ~90 lines of dependency-free JavaScript, and `docs/ios-shortcut.md` documents
+  the wire format it produces.
 - Locally: `terraform` ≥ 1.13, [`uv`](https://docs.astral.sh/uv/), and the
   AWS CLI v2. `shellcheck` and `trivy` only if you want to run the full CI
   checks by hand.
@@ -206,12 +216,32 @@ One-time, done by hand in the Tailscale admin console: tagging, an OAuth
 client, auto-approval for exit-node advertisement, and an SSH grant. See
 [`docs/tailnet-setup.md`](docs/tailnet-setup.md).
 
-### 6. Phone setup
+### 6. Client setup
 
-Install Scriptable and paste in the client script — copy it from the raw URL
-on the phone rather than syncing via iCloud Drive, which silently stops
-delivering updates. Optionally wrap each action in a Shortcut for a
+**On iOS**, install Scriptable and paste in the client script — copy it from
+the raw URL on the phone rather than syncing via iCloud Drive, which silently
+stops delivering updates. Optionally wrap each action in a Shortcut for a
 home-screen icon. See [`docs/ios-shortcut.md`](docs/ios-shortcut.md).
+
+**Anywhere else**, sign the request yourself. This is the whole client, and
+it works from any shell with `curl` and `openssl`:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+BODY="$1"                                   # e.g. '{"action":"up"}'
+URL=$(terraform -chdir=terraform output -raw function_url)
+SECRET=$(aws ssm get-parameter --name /shardvpn/signing-secret \
+           --with-decryption --query 'Parameter.Value' --output text)
+TS=$(date +%s)
+SIG=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -hex | awk '{print $NF}')
+curl -s -X POST "$URL" -H 'content-type: application/json' \
+  -H "x-shardvpn-timestamp: $TS" -H "x-shardvpn-signature: $SIG" -d "$BODY"
+```
+
+Note this version reads the secret from SSM each call, so it needs AWS
+credentials — fine on a laptop, wrong for a phone, which is why the shipped
+client keeps the secret in the device keychain instead and never talks to AWS.
 
 ## Daily use
 
