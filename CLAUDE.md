@@ -236,7 +236,16 @@ Real ones, each hit during this build:
 
   Those three keys were set to `Inactive` (reversible; none had been used
   since 2018–2020, and none of the users has a console password, so they now
-  have no access path at all). The `vpn` group itself still exists with
-  `IAMFullAccess` attached — reactivating any of those keys reopens the
-  escalation. Detaching `IAMFullAccess` from the group, or deleting the
-  group and its users outright, is unfinished business unrelated to shardVPN.
+  have no access path at all).
+
+  **`IAMFullAccess` was detached from the `vpn` group on 2026-08-05**, and is
+  now attached to nothing in the account — no user, group, or role. That
+  closes the escalation rather than merely disarming it: reactivating one of
+  those keys would grant EC2/S3/ECS/Logs, but not the ability to grant itself
+  anything further.
+
+  Still outstanding, and unrelated to shardVPN: the `vpn` group retains
+  `AmazonEC2FullAccess`, `AmazonS3FullAccess`,
+  `AmazonEC2ContainerServiceFullAccess` and `CloudWatchLogsFullAccess`, and
+  the three users still exist with inactive keys. Deleting the users and the
+  group outright would finish the job.
