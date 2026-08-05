@@ -126,13 +126,16 @@ async function loadConfig() {
 
 // --- request --------------------------------------------------------------
 
-async function send(url, secret, action) {
+async function send(url, secret, action, region) {
   // Reserved concurrency is 1, so a concurrent watchdog sweep returns 429.
   // Retry rather than reporting a transient lockout as a failure.
   let lastError = null;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const body = JSON.stringify({ action });
+    // Region is omitted entirely unless asked for, so the server falls back
+    // to /shardvpn/default-region. An unknown region comes back as a 400
+    // listing the valid ones, so a typo is legible rather than mysterious.
+    const body = JSON.stringify(region ? { action, region } : { action });
     const timestamp = Math.floor(Date.now() / 1000).toString();
 
     const request = new Request(url);
@@ -203,19 +206,49 @@ function describe(result) {
 async function main() {
   const { url, secret } = await loadConfig();
 
-  let action = args.shortcutParameter || args.queryParameters?.action;
+  // A shortcut parameter may carry a region: "up:eu-west-1". Plain "up",
+  // "down" and "status" still work, so existing Shortcuts are unaffected —
+  // and a per-region Shortcut is just one with "up:<region>" as its text.
+  const raw = args.shortcutParameter || args.queryParameters?.action;
+  let action = raw;
+  let region = null;
+
+  if (raw && raw.includes(":")) {
+    const [a, r] = raw.split(":", 2);
+    action = a;
+    region = r;
+  }
+
   if (!action) {
     const menu = new Alert();
     menu.title = "shardVPN";
-    const choices = ["status", "up", "down"];
+    // "up" uses the default region from SSM, which is the common case and
+    // stays one tap. "up elsewhere…" exists because the whole point of the
+    // region being a request parameter is launching near wherever you are —
+    // and changing the SSM default from a phone is not realistic.
+    const choices = ["status", "up", "up elsewhere…", "down"];
     choices.forEach((a) => menu.addAction(a));
     menu.addCancelAction("cancel");
     const chosen = await menu.presentSheet();
     if (chosen < 0) return;
-    action = choices[chosen];
+
+    if (choices[chosen] === "up elsewhere…") {
+      action = "up";
+      const ask = new Alert();
+      ask.title = "Region";
+      ask.message = "AWS region code, e.g. eu-west-1";
+      ask.addTextField("region");
+      ask.addAction("Launch");
+      ask.addCancelAction("cancel");
+      if ((await ask.present()) < 0) return;
+      region = ask.textFieldValue(0).trim();
+      if (!region) return;
+    } else {
+      action = choices[chosen];
+    }
   }
 
-  const result = await send(url, secret, action);
+  const result = await send(url, secret, action, region);
 
   const notification = new Notification();
   notification.title = "shardVPN";

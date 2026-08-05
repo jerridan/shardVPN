@@ -74,6 +74,28 @@ With no parameter, running the script directly shows an action sheet —
 function: open Scriptable, tap `shardVPN`, pick an action. Three taps instead
 of one. If you use this a few times a year, stopping here is reasonable.
 
+## 2b. Launching in another region
+
+`up` uses `/shardvpn/default-region` from SSM. To launch somewhere else —
+the point of region being a request parameter at all — pick **up elsewhere…**
+from the action sheet and enter a region code (`eu-west-1`, `ap-northeast-1`).
+
+A shortcut parameter can carry one too: `up:eu-west-1` launches there
+directly, so a per-region Shortcut is just one with that as its text. Plain
+`up`, `down` and `status` are unchanged.
+
+To change the default itself, no redeploy needed — the Lambda reads it per
+request:
+
+```bash
+aws ssm put-parameter --name /shardvpn/default-region \
+  --region ca-central-1 --value eu-west-1 --overwrite
+```
+
+An unknown region returns `400` listing the valid ones. Note that check sits
+*after* the idempotency short-circuit: ask to launch in a bad region while a
+node is already running and you get the running node back, not an error.
+
 ## 3. Add three Shortcuts (optional)
 
 Shortcuts buys four things the action sheet cannot:
