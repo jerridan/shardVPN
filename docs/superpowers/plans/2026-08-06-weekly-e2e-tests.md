@@ -2,7 +2,16 @@
 
 **Date:** 2026-08-06
 **Branch:** `claude/weekly-e2e-tests-pkcxfy`
-**Status:** plan only. Nothing here is built yet.
+**Status:** built, tasks 1–7 done. Task 8 — the first live run — is yours: it
+needs the tailnet and AWS setup in `docs/e2e-setup.md`, and it is the only
+thing that can actually prove any of this works.
+
+Two open questions from §9 were closed by removing the dependency rather than
+answering it: `aws-actions/configure-aws-credentials` is not used at all (the
+OIDC→STS exchange is done inline with `curl` and the AWS CLI, dropping a
+third-party action from a credentialed workflow), and the driver resolves the
+node's tailnet IP from `tailscale status --json` instead of betting on
+`--exit-node` accepting a bare hostname.
 
 **Goal:** Find out that shardVPN has stopped working on a Sunday morning at
 home, not on a Tuesday night in an airport.
@@ -76,8 +85,9 @@ here and should be recorded as such rather than quietly dropped.
 What survives is the constraint underneath it — *no long-lived AWS access keys
 anywhere*, the one that made v1's decommission necessary. The `live` job
 authenticates by GitHub OIDC to a dedicated role, so the credential is a
-15-minute STS session minted per run, revocable by deleting one role, auditable
-in CloudTrail. That is strictly better than the alternative it replaces (an
+one-hour STS session minted per run (`max_session_duration = 3600`, the
+shortest AWS allows here without extra configuration, against a job that runs
+~15 minutes), revocable by deleting one role, auditable in CloudTrail. That is strictly better than the alternative it replaces (an
 access key in GitHub secrets), and no worse than the phone, which holds a
 signing secret in an app-wide keychain.
 
@@ -315,23 +325,23 @@ whose stated posture is not to have any. Worth it only if §8.1 fails.
 
 ## 10. Tasks
 
-- [ ] **1.** `e2e/driver.py`: `up` / `status --wait-online` / `down --expect <id>`,
+- [x] **1.** `e2e/driver.py`: `up` / `status --wait-online` / `down --expect <id>`,
       stdlib only, signing identical to `auth.py`. Unit-test the signing helper
       against the same vectors `tests/test_auth.py` uses.
-- [ ] **2.** `terraform/ci.tf`: OIDC provider + branch-pinned role + scoped
+- [x] **2.** `terraform/ci.tf`: OIDC provider + branch-pinned role + scoped
       policy, behind `enable_ci_role` defaulting to `false`. Two new SecureString
       parameters. Run `trivy config terraform/` — expect findings on the new IAM
       and justify or suppress them in `.trivyignore` (bare ID lines, comments
       above, per the gotcha).
-- [ ] **3.** `.github/workflows/e2e.yml`: `drift` job.
-- [ ] **4.** `.github/workflows/e2e.yml`: `live` job, guard first, cleanup
+- [x] **3.** `.github/workflows/e2e.yml`: `drift` job.
+- [x] **4.** `.github/workflows/e2e.yml`: `live` job, guard first, cleanup
       `if: always()`, leak assertion last, SNS on failure and on skip.
-- [ ] **5.** `record` job: append one line to `docs/e2e-log.md` and push to the
+- [x] **5.** `record` job: append one line to `docs/e2e-log.md` and push to the
       default branch. `if: always()`, `contents: write` scoped to this job,
       `git pull --rebase` before push. Per §8.1 this is the run history and the
       keepalive in one.
-- [ ] **6.** `docs/e2e-setup.md`, and a pointer to it from `README.md`.
-- [ ] **7.** Update `CLAUDE.md`: the "no AWS credentials in CI" constraint is
+- [x] **6.** `docs/e2e-setup.md`, and a pointer to it from `README.md`.
+- [x] **7.** Update `CLAUDE.md`: the "no AWS credentials in CI" constraint is
       now qualified, and `tag:shardvpn-ci` joins the tailnet contract.
 - [ ] **8.** First run by `workflow_dispatch`, watched end to end. Confirm the
       egress IP assertion actually flips — a test that would pass without the

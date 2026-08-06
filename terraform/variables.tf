@@ -55,6 +55,42 @@ variable "monthly_budget_usd" {
   default     = 10
 }
 
+variable "enable_ci_role" {
+  description = "Create the GitHub OIDC role the weekly end-to-end test assumes."
+  type        = bool
+
+  # Off by default. This is the only thing in the project that grants an
+  # outside system any access to the account, so it must be switched on
+  # deliberately rather than acquired by running `terraform apply` after a
+  # `git pull`. See docs/e2e-setup.md.
+  default = false
+}
+
+variable "github_repository" {
+  description = "owner/name of the repository allowed to assume the CI role."
+  type        = string
+
+  # Must match GitHub's canonical casing: the sub claim is compared with
+  # StringEquals, which is case-sensitive.
+  default = "jerridan/shardVPN"
+}
+
+variable "github_default_branch" {
+  description = "The only branch whose workflow runs may assume the CI role."
+  type        = string
+  default     = "master"
+}
+
+variable "github_oidc_provider_arn" {
+  description = "Existing GitHub OIDC provider ARN to reuse. Empty means create one."
+  type        = string
+
+  # An AWS account can hold only one OIDC provider per URL. If this account
+  # already has GitHub's registered for something else, supply its ARN here
+  # instead of letting the apply fail with EntityAlreadyExists.
+  default = ""
+}
+
 variable "tailscale_tag" {
   description = "Tag applied to exit nodes in the tailnet."
   type        = string

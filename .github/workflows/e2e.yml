@@ -1,0 +1,365 @@
+name: e2e
+
+# Weekly, because the thing this guards against is the outside world moving
+# while the repository stands still: a provider release, a Tailscale API
+# change, an AL2023 package that vanishes. ci.yml cannot see any of it — it
+# runs entirely offline, which is why every hard bug in this project so far
+# reached production.
+#
+# Sundays at 08:00 UTC (a quiet time in ca-central-1, and early enough that a
+# red run is noticed before the week starts).
+on:
+  schedule:
+    - cron: '0 8 * * 0'
+  workflow_dispatch:
+    inputs:
+      region:
+        description: 'Region to launch the test node in'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+# The Lambda has reserved concurrency 1 and a single global pointer. Two
+# overlapping runs would fight over both.
+concurrency:
+  group: e2e
+  cancel-in-progress: false
+
+jobs:
+  # Offline, no credentials, no cost. `-upgrade` is the point: it resolves the
+  # newest provider allowed by the `~> 6.57` constraint rather than the one
+  # .terraform.lock.hcl pins, so a breaking provider change surfaces here
+  # instead of during an apply you are trying to do in a hurry.
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+      - run: terraform init -upgrade -backend=false
+        working-directory: terraform
+      - run: terraform validate
+        working-directory: terraform
+
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          python-version: '3.13'
+      - run: uv sync --group dev --locked
+      - run: uv run ruff check .
+      - run: uv run pytest -q
+
+      - run: shellcheck lambda/shardvpn/userdata.sh
+
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      outcome: ${{ steps.result.outputs.outcome }}
+      detail: ${{ steps.result.outputs.detail }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # No third-party action for this. The OIDC -> STS exchange is two calls
+      # with tools already on the runner, and doing it inline keeps one more
+      # mutable third-party tag out of a workflow that holds credentials.
+      - name: Assume the CI role
+        env:
+          ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'ca-central-1' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ROLE_ARN}" ]; then
+            echo "::error::AWS_ROLE_ARN repository variable is not set. See docs/e2e-setup.md."
+            exit 1
+          fi
+
+          token=$(curl -sS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" | jq -r '.value')
+
+          creds=$(aws sts assume-role-with-web-identity \
+            --role-arn "${ROLE_ARN}" \
+            --role-session-name "shardvpn-e2e-${GITHUB_RUN_ID}" \
+            --web-identity-token "${token}" \
+            --duration-seconds 3600 \
+            --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+            --output text)
+
+          # Masked before anything else can echo them.
+          i=1
+          for value in ${creds}; do
+            echo "::add-mask::${value}"
+            case ${i} in
+              1) echo "AWS_ACCESS_KEY_ID=${value}" >> "${GITHUB_ENV}" ;;
+              2) echo "AWS_SECRET_ACCESS_KEY=${value}" >> "${GITHUB_ENV}" ;;
+              3) echo "AWS_SESSION_TOKEN=${value}" >> "${GITHUB_ENV}" ;;
+            esac
+            i=$((i + 1))
+          done
+          echo "AWS_REGION=${AWS_REGION}" >> "${GITHUB_ENV}"
+          echo "AWS_DEFAULT_REGION=${AWS_REGION}" >> "${GITHUB_ENV}"
+
+      # Neither of these is stored in GitHub. The URL comes from the Lambda
+      # service because Terraform's state is local and gitignored, so the
+      # output in outputs.tf is not reachable from a runner.
+      - name: Fetch the endpoint and signing secret
+        run: |
+          set -euo pipefail
+          url=$(aws lambda get-function-url-config --function-name shardvpn \
+            --query FunctionUrl --output text)
+          echo "::add-mask::${url}"
+          echo "SHARDVPN_URL=${url}" >> "${GITHUB_ENV}"
+
+          secret=$(aws ssm get-parameter --name /shardvpn/signing-secret \
+            --with-decryption --query Parameter.Value --output text)
+          echo "::add-mask::${secret}"
+          echo "SHARDVPN_SECRET=${secret}" >> "${GITHUB_ENV}"
+
+      # The guard. The pointer is global and `down` terminates whatever it
+      # finds, so a test that runs while the VPN is genuinely in use would
+      # disconnect the person using it. Skipping costs a week of signal;
+      # tearing down a live connection costs a lot more.
+      - name: Skip if a node is already up
+        id: guard
+        run: |
+          set -euo pipefail
+          state=$(python3 e2e/driver.py status | jq -r '.state')
+          echo "state=${state}"
+          if [ "${state}" != "absent" ]; then
+            echo "::warning::A node is already running (state=${state}); skipping the test."
+            echo "skip=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "skip=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Launch
+        id: launch
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          # --ttl 30m is the leak insurance: if this runner dies before the
+          # teardown step, the hourly sweep reaps the node within the hour.
+          args=(up --ttl 30m)
+          if [ -n "${REGION}" ]; then args+=(--region "${REGION}"); fi
+          document=$(python3 e2e/driver.py "${args[@]}")
+          echo "${document}" | jq -c '{state, region, instance_id, hostname}'
+          echo "instance_id=$(echo "${document}" | jq -r '.instance_id')" >> "${GITHUB_OUTPUT}"
+          echo "region=$(echo "${document}" | jq -r '.region')" >> "${GITHUB_OUTPUT}"
+        env:
+          REGION: ${{ inputs.region }}
+
+      - name: Wait for the node to boot and join the tailnet
+        id: online
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          document=$(python3 e2e/driver.py status --wait-online --timeout 600)
+          public_ip=$(echo "${document}" | jq -r '.public_ip')
+          hostname=$(echo "${document}" | jq -r '.hostname')
+          echo "node ${hostname} is up at ${public_ip}"
+          echo "public_ip=${public_ip}" >> "${GITHUB_OUTPUT}"
+          echo "hostname=${hostname}" >> "${GITHUB_OUTPUT}"
+
+      # The runner joins as an ephemeral, tagged node and logs itself out when
+      # the job ends. Its OAuth client is separate from the Lambda's and is
+      # restricted to tag:shardvpn-ci, so a leak here cannot mint keys for
+      # tag:shardvpn-exit.
+      - name: Read the CI tailnet credentials
+        id: tsauth
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          for name in ci-tailscale-client-id ci-tailscale-client-secret; do
+            value=$(aws ssm get-parameter --name "/shardvpn/${name}" \
+              --with-decryption --query Parameter.Value --output text)
+            echo "::add-mask::${value}"
+            echo "${name}=${value}" >> "${GITHUB_OUTPUT}"
+          done
+
+      - name: Join the tailnet
+        if: steps.guard.outputs.skip == 'false'
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ steps.tsauth.outputs.ci-tailscale-client-id }}
+          oauth-secret: ${{ steps.tsauth.outputs.ci-tailscale-client-secret }}
+          tags: tag:shardvpn-ci
+
+      # The step that justifies the whole workflow. `tailnet: online` only
+      # proves the node registered; a node that boots, joins, advertises and
+      # routes nothing looks completely healthy right up to the moment you
+      # need it. Only pushing a packet through it tells the two apart — and a
+      # policy-file edit that drops the autogroup:internet grant produces
+      # exactly that failure.
+      - name: Route traffic through the exit node
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          NODE_HOSTNAME: ${{ steps.online.outputs.hostname }}
+          NODE_PUBLIC_IP: ${{ steps.online.outputs.public_ip }}
+        run: |
+          set -euo pipefail
+
+          before=$(curl -4 -sS --max-time 20 https://api.ipify.org)
+          echo "runner egress before: ${before}"
+
+          # Resolve the node's tailnet IP rather than passing a hostname:
+          # whether --exit-node accepts a bare hostname depends on MagicDNS
+          # state, and an unnecessary dependency on it would fail here for a
+          # reason unrelated to what this test is checking.
+          node_ip=$(tailscale status --json \
+            | jq -r --arg h "${NODE_HOSTNAME}" \
+              '.Peer[] | select(.HostName == $h) | .TailscaleIPs[0]' | head -1)
+          if [ -z "${node_ip}" ]; then
+            echo "::error::${NODE_HOSTNAME} is not visible as a peer from the runner."
+            tailscale status || true
+            exit 1
+          fi
+
+          sudo tailscale set --exit-node="${node_ip}"
+          trap 'sudo tailscale set --exit-node= || true' EXIT
+
+          # Tailscale reconfigures routing asynchronously; the first request
+          # can still leave through the runner's own interface.
+          for attempt in 1 2 3 4 5 6; do
+            after=$(curl -4 -sS --max-time 20 https://api.ipify.org || echo '')
+            [ "${after}" = "${NODE_PUBLIC_IP}" ] && break
+            echo "  attempt ${attempt}: egress is ${after:-unreachable}, want ${NODE_PUBLIC_IP}"
+            sleep 5
+          done
+
+          if [ "${after}" != "${NODE_PUBLIC_IP}" ]; then
+            echo "::error::Traffic is NOT routing through the exit node."
+            echo "Egress ${after:-unreachable}, expected the node's ${NODE_PUBLIC_IP}."
+            echo "The usual cause is the tailnet policy file: a tagged device is"
+            echo "not autogroup:member, so it needs its own grant to"
+            echo "autogroup:internet. See docs/e2e-setup.md."
+            exit 1
+          fi
+
+          if [ "${after}" = "${before}" ]; then
+            echo "::error::Egress IP did not change; this assertion proves nothing."
+            exit 1
+          fi
+          echo "egress is now ${after} — the exit node is carrying traffic"
+
+      - name: Tear down
+        if: always() && steps.guard.outputs.skip == 'false' && steps.launch.outputs.instance_id != ''
+        env:
+          INSTANCE_ID: ${{ steps.launch.outputs.instance_id }}
+        run: |
+          set -euo pipefail
+          # --expect refuses to terminate anything this run did not launch.
+          python3 e2e/driver.py down --expect "${INSTANCE_ID}"
+
+      # Belt and braces: ask EC2 directly rather than trusting the API's own
+      # report that it terminated something.
+      - name: Confirm nothing was left running
+        if: always() && steps.guard.outputs.skip == 'false' && steps.launch.outputs.region != ''
+        env:
+          REGION: ${{ steps.launch.outputs.region }}
+        run: |
+          set -euo pipefail
+          survivors=$(aws ec2 describe-instances --region "${REGION}" \
+            --filters 'Name=tag:shardvpn:role,Values=exit-node' \
+                      'Name=instance-state-name,Values=pending,running,stopping,stopped' \
+            --query 'Reservations[].Instances[].InstanceId' --output text)
+          if [ -n "${survivors}" ]; then
+            echo "::error::Exit nodes still alive in ${REGION}: ${survivors}"
+            exit 1
+          fi
+          echo "no exit nodes remain in ${REGION}"
+
+      - name: Summarise
+        id: result
+        if: always()
+        env:
+          SKIPPED: ${{ steps.guard.outputs.skip }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          if [ "${SKIPPED}" = "true" ]; then
+            outcome=skipped
+            detail="a node was already running; the weekly check did not run"
+          elif [ "${JOB_STATUS}" = "success" ]; then
+            outcome=passed
+            detail="launched, routed traffic, and tore down cleanly"
+          else
+            outcome=failed
+            detail="see ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          fi
+          echo "outcome=${outcome}" >> "${GITHUB_OUTPUT}"
+          echo "detail=${detail}" >> "${GITHUB_OUTPUT}"
+          echo "### e2e: ${outcome}" >> "${GITHUB_STEP_SUMMARY}"
+          echo "${detail}" >> "${GITHUB_STEP_SUMMARY}"
+
+      # A skip is reported too. A run that quietly does nothing for three
+      # weeks while you are travelling looks exactly like three passes.
+      - name: Notify by SNS
+        if: always() && steps.result.outputs.outcome != 'passed'
+        env:
+          OUTCOME: ${{ steps.result.outputs.outcome }}
+          DETAIL: ${{ steps.result.outputs.detail }}
+        run: |
+          set -euo pipefail
+          # Constructed rather than discovered: the CI role is granted
+          # sns:Publish on this one topic and nothing else, and adding
+          # sns:ListTopics to find an ARN we can derive would widen it for no
+          # reason. get-caller-identity needs no permission at all.
+          account=$(aws sts get-caller-identity --query Account --output text)
+          topic="arn:aws:sns:${AWS_REGION}:${account}:shardvpn-notifications"
+          aws sns publish --topic-arn "${topic}" \
+            --subject "shardvpn: weekly e2e ${OUTCOME}" \
+            --message "The weekly end-to-end test ${OUTCOME}: ${DETAIL}" >/dev/null
+
+  # The run log, which is also the keepalive. GitHub disables scheduled
+  # workflows after 60 days without repository activity, and this repository
+  # is quiet between trips — a silently disabled test looks exactly like a
+  # passing one. Committing every run keeps the repository permanently far
+  # from that threshold and leaves a history worth reading.
+  record:
+    needs: [drift, live]
+    if: always() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Append the result
+        env:
+          OUTCOME: ${{ needs.live.outputs.outcome || 'failed' }}
+          DETAIL: ${{ needs.live.outputs.detail }}
+          DRIFT: ${{ needs.drift.result }}
+        run: |
+          set -euo pipefail
+          test -f docs/e2e-log.md || cat > docs/e2e-log.md <<'HEADER'
+          # Weekly end-to-end run log
+
+          Written by .github/workflows/e2e.yml, newest at the bottom. It is a
+          history first — "has this ever been red before?" is the question you
+          will actually want answered — and the thing that keeps GitHub from
+          disabling the schedule second.
+
+          HEADER
+          printf -- '- %s — live: **%s**, drift: %s. %s\n' \
+            "$(date -u +%Y-%m-%d)" "${OUTCOME}" "${DRIFT}" "${DETAIL}" >> docs/e2e-log.md
+
+      - name: Commit
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/e2e-log.md
+          git diff --staged --quiet && exit 0
+          # No [skip ci]: pushes authenticated with GITHUB_TOKEN do not trigger
+          # workflows, so there is no loop to break.
+          git commit -m "Records the weekly e2e run."
+          for attempt in 1 2 3 4; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && \
+              git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep $((attempt * 2))
+          done
+          echo "::error::could not push the run log"
+          exit 1

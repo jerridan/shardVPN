@@ -24,8 +24,12 @@ bare AL2023 arm64 instance into a Tailscale exit node with no inbound ports.
   `${TS_HOSTNAME}` via `string.Template`.
 - `terraform/` — single root module.
 - `docs/ios/shardvpn.js` — Scriptable client.
-- `docs/tailnet-setup.md`, `docs/ios-shortcut.md` — the one-time human setup
-  this code depends on but cannot do for itself.
+- `e2e/driver.py` — signed CLI for the Function URL, stdlib only. Deliberately
+  outside `tests/` so `uv run pytest` never collects something that reaches
+  AWS; `tests/test_e2e_driver.py` pins its signing against the handler's
+  `verify()` offline.
+- `docs/tailnet-setup.md`, `docs/ios-shortcut.md`, `docs/e2e-setup.md` — the
+  one-time human setup this code depends on but cannot do for itself.
 - `docs/superpowers/specs/2026-08-01-shardvpn-v2-design.md` — the design and
   the reasoning behind every tradeoff. Read this before changing behaviour,
   not just this file.
@@ -41,9 +45,13 @@ trivy config terraform/
 ```
 
 Tests are offline: `botocore.stub.Stubber` for AWS, `urlopen` patched for
-Tailscale, a client factory for `watchdog.sweep`. There is no integration
-test — the real check is the end-to-end run (`curl ifconfig.me` through the
-node from two devices at once).
+Tailscale, a client factory for `watchdog.sweep`.
+
+The real check is an end-to-end run against live AWS and a live tailnet.
+`.github/workflows/e2e.yml` does it weekly — guard, launch, wait for the
+tailnet, assert the runner's egress IP becomes the node's, tear down, assert
+nothing survives — and `e2e/driver.py` runs the same path by hand. Setup is
+`docs/e2e-setup.md`; it is inert until `enable_ci_role = true`.
 
 `ruff format` formats Python code fences inside Markdown files too, not just
 `.py` files — any Python you put in a doc has to be ruff-clean, or write it
@@ -66,6 +74,19 @@ instead) if it's illustrative shell usage rather than a real module.
 - OAuth client gets `auth_keys` + `devices:core:read`. The node removes itself
   from the tailnet via a shutdown-ordered `tailscale logout`.
 - IPv6-only rejected: default VPCs have no IPv6 CIDR.
+- **"No AWS credentials in CI" is now qualified, not abandoned.** `ci.yml`
+  stays fully offline. The weekly `e2e` workflow reaches AWS through GitHub
+  OIDC into `shardvpn-ci`, a role pinned to one repository, one branch and the
+  `sts.amazonaws.com` audience. No long-lived key exists anywhere, and there
+  are **no GitHub repository secrets** — the function URL, signing secret and
+  CI Tailscale client are all read from AWS at runtime. Accepted residual: the
+  role is a second path to the signing secret for anyone who can run a
+  workflow on `master`.
+- The runner joins the tailnet as `tag:shardvpn-ci`, minted by a **second**
+  OAuth client scoped to that tag alone. A leak from a runner cannot mint keys
+  for `tag:shardvpn-exit`.
+- The weekly test launches with `ttl 30m`. If the runner dies mid-run, the
+  existing sweep reaps the node — no new teardown machinery.
 
 ## Open
 
@@ -205,6 +226,25 @@ Real ones, each hit during this build:
 - Address the tailnet as `-` in every Tailscale API call
   (`/api/v2/tailnet/-/...`), never by its real name — this repository is
   public, and the tailnet name isn't secret but has no reason to be in it.
+- **Tagged Tailscale devices are not `autogroup:member`.** The existing
+  `{"src": ["autogroup:member"], "dst": ["autogroup:internet"]}` grant does not
+  cover `tag:shardvpn-ci`, so the CI runner needs its own grant or it joins the
+  tailnet, selects the exit node without error, and routes nothing. Same class
+  of silent failure as the original `autogroup:internet` omission, and on a
+  first run it is indistinguishable from the regression the test exists to find.
+- **Gate `aws_iam_policy_document` data sources with `count` too**, not just
+  the resources that consume them. `terraform validate` passes either way, but
+  with `enable_ci_role = false` an ungated document still evaluates and fails
+  the *plan* with an invalid `identifiers` list, because
+  `one(aws_iam_openid_connect_provider.github[*].arn)` is null. A disabled
+  feature must cost nothing at plan time.
+- An AWS account may hold **one OIDC provider per URL**. If GitHub's is already
+  registered, `terraform apply` fails with `EntityAlreadyExists`; pass the
+  existing ARN in `github_oidc_provider_arn` rather than creating a second.
+- The OIDC `sub` condition is compared with **case-sensitive** `StringEquals`,
+  and GitHub emits the repository in its canonical casing — `jerridan/shardVPN`,
+  not `jerridan/shardvpn`. Wrong casing fails closed with an STS `AccessDenied`
+  that says nothing about casing.
 - **Do not distribute the Scriptable client via iCloud Drive.** Copying it
   into `~/Library/Mobile Documents/iCloud~dk~simonbs~Scriptable/Documents/`
   works exactly once and then stalls silently: during setup the initial file

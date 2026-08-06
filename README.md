@@ -328,9 +328,15 @@ This repository is public. The design assumes that and is built around it:
 GitHub setting, not something committed. Under Settings → Branches, add a
 protection rule for `master` requiring the four CI jobs — `python`, `shell`,
 `terraform`, `scan` — to pass before merging, and require branches to be up
-to date before merging. CI itself needs no AWS credentials (every check runs
-`-backend=false`/offline); if that ever changes, use GitHub OIDC into a
-scoped role, not stored keys.
+to date before merging. The four `ci.yml` jobs need no AWS credentials (every
+check runs `-backend=false`/offline).
+
+That is no longer the whole story: the weekly `e2e` workflow does reach AWS,
+and it does it the way the line above always said to — GitHub OIDC into a
+scoped, branch-pinned role, no stored keys, no repository secrets at all. It
+is off until you enable it (`docs/e2e-setup.md`), and it is deliberately not
+a required check: it depends on live AWS and a live tailnet, so a red run
+means "go look", not "this pull request is bad".
 
 ## Running the tests
 
@@ -344,11 +350,21 @@ uv run ruff format --check .
 uv run pytest -v
 ```
 
-191 tests, fully offline: `botocore.stub.Stubber` for every AWS call,
-`urlopen` patched for Tailscale, a client factory for the watchdog sweep.
-There is no integration test suite — the real verification is an end-to-end
-run against live AWS and a live tailnet (`curl ifconfig.me` through the node
-from two devices at once), which is inherently manual.
+Fully offline: `botocore.stub.Stubber` for every AWS call, `urlopen` patched
+for Tailscale, a client factory for the watchdog sweep. Nothing under `tests/`
+touches the network, and `e2e/` is deliberately outside it so pytest never
+collects the one thing that does.
+
+The real verification is an end-to-end run against live AWS and a live
+tailnet. That used to be entirely manual; `.github/workflows/e2e.yml` now does
+it weekly — launch, route real traffic through the node, tear down — and
+`e2e/driver.py` runs the same path by hand:
+
+```bash
+python3 e2e/driver.py status      # see e2e/README.md for the two env vars
+```
+
+Setup, cost and limits: `docs/e2e-setup.md`. Run history: `docs/e2e-log.md`.
 
 Also checked in CI, if you have the tools locally:
 
