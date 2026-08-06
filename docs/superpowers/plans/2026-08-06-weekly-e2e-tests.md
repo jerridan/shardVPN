@@ -220,12 +220,7 @@ budget alarm stays at $10 and will not notice.
 
 - **GitHub disables scheduled workflows after 60 days of repository
   inactivity.** This repo goes quiet between trips, so it will hit that, and a
-  disabled test is worse than no test because it looks like a pass. Proposed
-  fix: the workflow appends a one-line result to `docs/e2e-log.md` and commits
-  it with `[skip ci]` (needs `contents: write` on that step alone), which
-  doubles as a run history. Whether a `GITHUB_TOKEN`-authored commit resets the
-  60-day clock is **not confirmed** — verify at build time; the fallback is
-  that GitHub emails before disabling and re-enabling is one click.
+  disabled test is worse than no test because it looks like a pass. See §8.1.
 - **A skipped run looks like a passing run.** If the VPN is up for three
   straight Sundays, nothing is tested and nothing says so. Mitigation: the
   skip path publishes to SNS too, so a skip is visible rather than silent.
@@ -240,6 +235,70 @@ budget alarm stays at $10 and will not notice.
 - **The `drift` job's `-upgrade` will eventually fail for reasons unrelated to
   this repo**, e.g. a provider yanked from the registry. Same triage as above.
 
+### 8.1 The run log, and why it is also the keepalive
+
+A final `record` job appends one line per run to `docs/e2e-log.md` and pushes it
+to the default branch: date, outcome, region, instance ID, duration. It is a
+run history first — "has this ever been red before?" is the question you will
+actually want answered — and a keepalive second.
+
+The rule is real but underspecified. GitHub's documentation states it ("In a
+public repository, scheduled workflows are automatically disabled when no
+repository activity has occurred in 60 days") and then never defines
+*activity*. There is no authoritative answer in the community threads. What is
+reported consistently is that **only new commits** reset the timer: releases,
+tags, issues and merged PRs do not.
+
+The useful negative evidence is `efrecon/gh-action-keepalive`, whose author
+records that his first implementation — toggling the workflow disabled and
+re-enabled through the API — **failed to prevent deactivation**, and that he
+rewrote it to commit a date-stamped marker file instead. So the tempting
+alternative, a second workflow that re-enables this one, is known-broken as
+well as circular (a disabled scheduled workflow cannot run itself to re-enable
+itself). Committing is the approach that works.
+
+Mechanics that matter:
+
+- **`if: always()`.** A failed run must still write its line. A red week is
+  precisely when you least want the schedule silently disabled, and a run that
+  only records successes stops being a history at exactly the moment it becomes
+  interesting.
+- **`GITHUB_TOKEN` pushes do not trigger workflows** — documented behaviour, so
+  there is no loop to break and `[skip ci]` is unnecessary. (An earlier draft
+  of this plan asked for it.)
+- **`contents: write` on the `record` job alone**, leaving the workflow-level
+  `permissions` read-only, the way `ci.yml`'s `scan` job already scopes its
+  `pull-requests: write`.
+- **Default branch, not a side branch.** A push to any branch probably counts
+  as activity, but "probably" is not worth it here. Cost is ~52 one-line
+  commits a year in `master`'s history.
+- `git pull --rebase` before pushing. The `concurrency` group plus a weekly
+  cadence makes a collision nearly impossible, and "nearly" is cheap to close.
+
+This is stronger than a generic keepalive: a dedicated one commits every ~41
+days, while this commits every run, so the repository is never within seven
+weeks of the threshold. It is also self-sustaining in the only direction that
+matters — the clock can only run down if the workflow has already stopped
+running, which is a louder failure than a silent disable.
+
+**Residual uncertainty, stated honestly:** that a `GITHUB_TOKEN`-authored
+commit counts as repository activity is inferred from widespread practice, not
+from documentation or a support answer. If it turns out not to, the fallback is
+§8.2.
+
+### 8.2 Fallback if the commit does not reset the clock
+
+The auto-disable applies to the `schedule` trigger. A workflow fired externally
+through the `workflow_dispatch` API is never auto-disabled, so dropping
+`schedule` and having AWS drive the cadence removes the failure mode outright
+rather than working around it — and this repository already owns an EventBridge
+Scheduler and the SecureString pattern to hold the credential.
+
+Not the first choice, because it requires a long-lived GitHub credential (a
+fine-grained PAT with `actions: write`, or a GitHub App private key) living in
+SSM, plus a second Scheduler target. That is a new credential class in a system
+whose stated posture is not to have any. Worth it only if §8.1 fails.
+
 ## 9. Open questions to settle while building
 
 - The current major tag of `tailscale/github-action` (repo constraint: pin
@@ -249,7 +308,10 @@ budget alarm stays at $10 and will not notice.
   MagicDNS name / tailnet IP. The status document gives the hostname; if that
   is not accepted, the driver needs to return the tailnet IP instead, which
   means the Lambda would have to surface it.
-- Whether a bot commit resets the 60-day scheduled-workflow clock (§8).
+- Whether a bot commit resets the 60-day scheduled-workflow clock (§8.1).
+  Cannot be answered at build time — it is only answerable by 60 days passing.
+  Set a calendar reminder for **2026-10-06** to check that the workflow is still
+  enabled; if it was disabled despite the log commits, switch to §8.2.
 
 ## 10. Tasks
 
@@ -264,14 +326,18 @@ budget alarm stays at $10 and will not notice.
 - [ ] **3.** `.github/workflows/e2e.yml`: `drift` job.
 - [ ] **4.** `.github/workflows/e2e.yml`: `live` job, guard first, cleanup
       `if: always()`, leak assertion last, SNS on failure and on skip.
-- [ ] **5.** `docs/e2e-setup.md`, and a pointer to it from `README.md`.
-- [ ] **6.** Update `CLAUDE.md`: the "no AWS credentials in CI" constraint is
+- [ ] **5.** `record` job: append one line to `docs/e2e-log.md` and push to the
+      default branch. `if: always()`, `contents: write` scoped to this job,
+      `git pull --rebase` before push. Per §8.1 this is the run history and the
+      keepalive in one.
+- [ ] **6.** `docs/e2e-setup.md`, and a pointer to it from `README.md`.
+- [ ] **7.** Update `CLAUDE.md`: the "no AWS credentials in CI" constraint is
       now qualified, and `tag:shardvpn-ci` joins the tailnet contract.
-- [ ] **7.** First run by `workflow_dispatch`, watched end to end. Confirm the
+- [ ] **8.** First run by `workflow_dispatch`, watched end to end. Confirm the
       egress IP assertion actually flips — a test that would pass without the
       exit node set is worthless, so verify it fails when it should by
       running it once with the exit-node step disabled.
 
-Task 7 is the one that matters. Everything before it is untested by
+Task 8 is the one that matters. Everything before it is untested by
 construction: this workflow cannot be verified by the offline suite, and its
 first real run is its only proof.
